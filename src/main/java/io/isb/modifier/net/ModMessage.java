@@ -52,6 +52,11 @@ public class ModMessage {
                 .decoder(PacketSwapBookSpell::decode)
                 .consumerMainThread(PacketSwapBookSpell::handle)
                 .add();
+        NETWORK.messageBuilder(PacketPerformSynthesis.class, id(), NetworkDirection.PLAY_TO_SERVER)
+                .encoder(PacketPerformSynthesis::encode)
+                .decoder(PacketPerformSynthesis::decode)
+                .consumerMainThread(PacketPerformSynthesis::handle)
+                .add();
     }
 
     // ... 发送方法保持不变 ...
