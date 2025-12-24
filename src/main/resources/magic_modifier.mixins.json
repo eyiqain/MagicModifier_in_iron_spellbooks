@@ -1,0 +1,21 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "io.isb.modifier.mixin",
+  "compatibilityLevel": "JAVA_8",
+  "refmap": "magic_modifier.refmap.json",
+  "mixins": [
+    "charge.AbstractSpellMixin",
+    "charge.MagicDataChargeMixin",
+    "charge.MagicManagerMixin",
+    "ServerPlayerMixin",
+    "config.DefaultConfigMixin",
+    "config.ServerConfigsMixin",
+    "config.SpellConfigParametersMixin"
+  ],
+  "client": [
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
