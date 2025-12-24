@@ -5,10 +5,11 @@
   "compatibilityLevel": "JAVA_8",
   "refmap": "magic_modifier.refmap.json",
   "mixins": [
+    "ServerPlayerMixin",
+    "block.InscriptionTableBlockMixin",
     "charge.AbstractSpellMixin",
     "charge.MagicDataChargeMixin",
     "charge.MagicManagerMixin",
-    "ServerPlayerMixin",
     "config.DefaultConfigMixin",
     "config.ServerConfigsMixin",
     "config.SpellConfigParametersMixin"

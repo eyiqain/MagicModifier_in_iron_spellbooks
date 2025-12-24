@@ -1,6 +1,6 @@
 package io.isb.modifier.net;
 
-import io.isb.modifier.MagicModifier; // 请确认你的主类名
+import io.isb.modifier.MagicModifier;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.network.NetworkDirection;
@@ -24,14 +24,37 @@ public class ModMessage {
                 s -> true
         );
 
-        // === 1. 同步法术充能 (Server -> Client) ===
+        // 已有的包...
         NETWORK.messageBuilder(PacketSyncCharge.class, id(), NetworkDirection.PLAY_TO_CLIENT)
                 .encoder(PacketSyncCharge::encode)
                 .decoder(PacketSyncCharge::decode)
                 .consumerMainThread(PacketSyncCharge::handle)
                 .add();
+        NETWORK.messageBuilder(PacketUIAction.class, id(), NetworkDirection.PLAY_TO_SERVER)
+                .encoder(PacketUIAction::encode)
+                .decoder(PacketUIAction::decode)
+                .consumerMainThread(PacketUIAction::handle)
+                .add();
+
+        // === 新增：法术刻印包 (Client -> Server) ===
+        NETWORK.messageBuilder(PacketInscribeSpell.class, id(), NetworkDirection.PLAY_TO_SERVER)
+                .encoder(PacketInscribeSpell::encode)
+                .decoder(PacketInscribeSpell::decode)
+                .consumerMainThread(PacketInscribeSpell::handle)
+                .add();
+        NETWORK.messageBuilder(PacketExtractSpell.class, id(), NetworkDirection.PLAY_TO_SERVER)
+                .encoder(PacketExtractSpell::encode)
+                .decoder(PacketExtractSpell::decode)
+                .consumerMainThread(PacketExtractSpell::handle)
+                .add();
+        NETWORK.messageBuilder(PacketSwapBookSpell.class, id(), NetworkDirection.PLAY_TO_SERVER)
+                .encoder(PacketSwapBookSpell::encode)
+                .decoder(PacketSwapBookSpell::decode)
+                .consumerMainThread(PacketSwapBookSpell::handle)
+                .add();
     }
 
+    // ... 发送方法保持不变 ...
     public static <MSG> void sendToAll(MSG message) {
         NETWORK.send(PacketDistributor.ALL.noArg(), message);
     }
