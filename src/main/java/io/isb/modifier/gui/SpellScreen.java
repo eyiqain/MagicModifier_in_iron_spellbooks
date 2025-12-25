@@ -36,32 +36,34 @@ public class SpellScreen extends AbstractContainerScreen<SpellMenu> {
     // ==========================================
 
     // 合成区标题
-    private static final int SYNTH_LABEL_X = 161;
-    private static final int SYNTH_LABEL_Y = 88;
+    private static final int SYNTH_LABEL_X = 159;
+    private static final int SYNTH_LABEL_Y = 137-12;
 
     // 合成输入槽 (Input 1, Input 2)
-    private static final int SYNTH_IN_X = 165;
-    private static final int SYNTH_IN_Y_1 = 99;
-    private static final int SYNTH_IN_Y_2 = 122;
+    private static final int SYNTH_IN_X_1 = 160;
+    private static final int SYNTH_IN_X_2 = 180;
+    private static final int SYNTH_IN_Y_1 = 137;
+    private static final int SYNTH_IN_Y_2 = 137;
 
     // 合成输出槽 (Output 1 - 产物, Output 2 - 装饰/副产物)
-    private static final int SYNTH_OUT_X = 232;
-    private static final int SYNTH_OUT_Y_1 = 99;
-    private static final int SYNTH_OUT_Y_2 = 122;
+    private static final int SYNTH_OUT_X_1 = 217;
+    private static final int SYNTH_OUT_X_2 = 237;
+    private static final int SYNTH_OUT_Y_1 = 137;
+    private static final int SYNTH_OUT_Y_2 = 137;
 
     // 合成按钮
-    private static final int SYNTH_BTN_X = 202;
-    private static final int SYNTH_BTN_Y = 112;
+    private static final int SYNTH_BTN_X = 201;
+    private static final int SYNTH_BTN_Y = 139;
     private static final int SYNTH_BTN_W = 14;
     private static final int SYNTH_BTN_H = 14;
 
     // 左侧列表布局
     private static final int GRID_X = 26;
-    private static final int GRID_Y = 16;
+    private static final int GRID_Y = 12;
     private static final int COL_GAP = 20;
     private static final int ROW_GAP = 24;
     private static final int COLS = 4;
-    private static final int MAX_Y = 151; // 列表底部Y坐标限制
+    private static final int MAX_Y = 148; // 列表底部Y坐标限制
     private static final int TITLE_HEIGHT = 11; // 分类标题高度
     private static final int CATEGORY_PADDING = 3; // 分类间距
 
@@ -388,7 +390,7 @@ public class SpellScreen extends AbstractContainerScreen<SpellMenu> {
             return;
         }
 
-        Component titleMsg = Component.literal("魔法书：").withStyle(ChatFormatting.BOLD, ChatFormatting.BLACK);
+        Component titleMsg = Component.literal("魔法书:").withStyle(ChatFormatting.BOLD, ChatFormatting.BLACK);
         guiGraphics.drawString(this.font, titleMsg, left + BOOK_BOX_X, top + BOOK_BOX_Y, 0xFF000000, false);
 
         ISpellContainer bookContainer = ISpellContainer.get(bookStack);
@@ -459,7 +461,7 @@ public class SpellScreen extends AbstractContainerScreen<SpellMenu> {
     private void checkSynthRightClick(int mouseX, int mouseY, int left, int top) {
         // 1. 处理输入槽 (右键回收)
         for (int i = 0; i < 2; i++) {
-            int x = left + SYNTH_IN_X;
+            int x = (i == 0) ? (left + SYNTH_IN_X_1) : (left + SYNTH_IN_X_2);
             int y = (i == 0) ? (top + SYNTH_IN_Y_1) : (top + SYNTH_IN_Y_2);
 
             if (isHovering(x, y, SYNTH_SLOT_SIZE, SYNTH_SLOT_SIZE, mouseX, mouseY)) {
@@ -475,7 +477,7 @@ public class SpellScreen extends AbstractContainerScreen<SpellMenu> {
         }
 
         // 2. 处理产物槽 (右键直接收货)
-        int outX = left + SYNTH_OUT_X;
+        int outX = left + SYNTH_OUT_X_1;
         int outY = top + SYNTH_OUT_Y_1;
         if (isHovering(outX, outY, SYNTH_SLOT_SIZE, SYNTH_SLOT_SIZE, mouseX, mouseY)) {
             if (isCraftResultPending) {
@@ -546,7 +548,7 @@ public class SpellScreen extends AbstractContainerScreen<SpellMenu> {
      */
     private boolean handleDropToSynth(int mouseX, int mouseY, int left, int top) {
         for (int i = 0; i < 2; i++) {
-            int x = left + SYNTH_IN_X;
+            int x = (i == 0) ? (left + SYNTH_IN_X_1) : (left + SYNTH_IN_X_2);
             int y = (i == 0) ? (top + SYNTH_IN_Y_1) : (top + SYNTH_IN_Y_2);
 
             if (isHovering(x, y, SYNTH_SLOT_SIZE, SYNTH_SLOT_SIZE, mouseX, mouseY)) {
@@ -644,12 +646,12 @@ public class SpellScreen extends AbstractContainerScreen<SpellMenu> {
      * 渲染合成 UI
      */
     private void renderSynthesisUI(GuiGraphics guiGraphics, int left, int top, int mouseX, int mouseY) {
-        Component titleMsg = Component.literal("魔法合成：").withStyle(ChatFormatting.BOLD, ChatFormatting.BLACK);
+        Component titleMsg = Component.literal("魔法合成:").withStyle(ChatFormatting.BOLD, ChatFormatting.BLACK);
         guiGraphics.drawString(this.font, titleMsg, left + SYNTH_LABEL_X, top + SYNTH_LABEL_Y, 0xFF000000, false);
 
         // 渲染输入槽 (0, 1)
         for (int i = 0; i < 2; i++) {
-            int x = left + SYNTH_IN_X;
+            int x = (i == 0) ? (left + SYNTH_IN_X_1) : (left + SYNTH_IN_X_2);
             int y = (i == 0) ? (top + SYNTH_IN_Y_1) : (top + SYNTH_IN_Y_2);
 
             boolean isHovered = isHovering(x, y, SYNTH_SLOT_SIZE, SYNTH_SLOT_SIZE, mouseX, mouseY);
@@ -668,11 +670,11 @@ public class SpellScreen extends AbstractContainerScreen<SpellMenu> {
         boolean btnHover = isHovering(btnX, btnY, SYNTH_BTN_W, SYNTH_BTN_H, mouseX, mouseY);
         int btnU = 0;
         if (canCraft) btnU = btnHover ? 28 : 14;
-        guiGraphics.blit(TEXTURE, btnX, btnY, btnU, 197, SYNTH_BTN_W, SYNTH_BTN_H, 512, 512);
+        guiGraphics.blit(TEXTURE, btnX, btnY, btnU, 211, SYNTH_BTN_W, SYNTH_BTN_H, 512, 512);
 
         // 渲染输出槽 (2, 3)
         for (int i = 0; i < 2; i++) {
-            int x = left + SYNTH_OUT_X;
+            int x = (i == 0) ? (left + SYNTH_OUT_X_1) : (left + SYNTH_OUT_X_2);
             int y = (i == 0) ? (top + SYNTH_OUT_Y_1) : (top + SYNTH_OUT_Y_2);
 
             boolean isHovered = isHovering(x, y, SYNTH_SLOT_SIZE, SYNTH_SLOT_SIZE, mouseX, mouseY);
@@ -885,7 +887,7 @@ public class SpellScreen extends AbstractContainerScreen<SpellMenu> {
         int left = (this.width - this.imageWidth) / 2;
         int top = (this.height - this.imageHeight) / 2;
         for (int i = 0; i < 4; i++) {
-            int x = (i < 2) ? (left + SYNTH_IN_X) : (left + SYNTH_OUT_X);
+            int x = (i < 2) ? ((i==0)?left+SYNTH_IN_X_1 : left+SYNTH_IN_X_2) : ((i==2)?left+SYNTH_OUT_X_1 : left+SYNTH_OUT_X_2);
             int y = (i < 2) ? ((i==0)?top+SYNTH_IN_Y_1 : top+SYNTH_IN_Y_2) : ((i==2)?top+SYNTH_OUT_Y_1 : top+SYNTH_OUT_Y_2);
             if (isHovering(x, y, SYNTH_SLOT_SIZE, SYNTH_SLOT_SIZE, mouseX, mouseY)) {
                 SpellData sd = synthSlots[i];
@@ -1029,7 +1031,7 @@ public class SpellScreen extends AbstractContainerScreen<SpellMenu> {
     }
     private boolean tryStartDragSynth(int mouseX, int mouseY, int left, int top) {
         for (int i = 0; i < 4; i++) {
-            int x = (i < 2) ? (left + SYNTH_IN_X) : (left + SYNTH_OUT_X);
+            int x = (i < 2) ? ((i==0)?left+SYNTH_IN_X_1 : left+SYNTH_IN_X_2) : ((i==2)?left+SYNTH_OUT_X_1 : left+SYNTH_OUT_X_2);
             int y = (i < 2) ? ((i==0)?top+SYNTH_IN_Y_1 : top+SYNTH_IN_Y_2) : ((i==2)?top+SYNTH_OUT_Y_1 : top+SYNTH_OUT_Y_2);
             if (isHovering(x, y, SYNTH_SLOT_SIZE, SYNTH_SLOT_SIZE, mouseX, mouseY)) {
                 if (synthSlots[i] != SpellData.EMPTY) {
