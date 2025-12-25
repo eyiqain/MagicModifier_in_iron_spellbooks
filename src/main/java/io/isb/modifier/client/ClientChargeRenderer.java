@@ -140,6 +140,7 @@ public class ClientChargeRenderer {
         // x+3, y+3 是左上角
         // 底部 y 是 y+3+16 = y+19
         // 顶部 y 是 y+19 - currentHeight
+
         int rectX = x + 3;
         int rectY = y + 19 - currentHeight;
         int rectWidth = 16;

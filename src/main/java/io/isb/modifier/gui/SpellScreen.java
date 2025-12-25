@@ -39,6 +39,7 @@ public class SpellScreen extends AbstractContainerScreen<SpellMenu> {
     private static final int SYNTH_LABEL_X = 161;
     private static final int SYNTH_LABEL_Y = 88;
 
+
     // 合成输入槽 (Input 1, Input 2)
     private static final int SYNTH_IN_X = 165;
     private static final int SYNTH_IN_Y_1 = 99;
