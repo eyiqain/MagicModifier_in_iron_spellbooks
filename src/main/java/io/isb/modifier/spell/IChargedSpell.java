@@ -6,4 +6,6 @@ public interface IChargedSpell {
 
     // 运行时逻辑调用：获取充能冷却比例（读配置）
     float eyi$getChargeCooldownMultiplier();
+
+    double eyi$getChargeRatio();
 }
