@@ -203,9 +203,10 @@ public class SpellScreen extends AbstractContainerScreen<SpellMenu> {
                 SpellData spellData = container.getSpellAtIndex(0);
                 drawFloatingIcon(g, mouseX, mouseY, spellData);
             }
+        }else{
+            // --- 渲染 Tooltip (物品栏的) ---
+            this.renderTooltip(g, mouseX, mouseY);
         }
-        // --- 渲染 Tooltip (物品栏的) ---
-        this.renderTooltip(g, mouseX, mouseY);
     }
     @Override
     protected void renderBg(GuiGraphics g, float partialTick, int mouseX, int mouseY) {

@@ -32,14 +32,14 @@ public class SpellPage extends  SpellScreen.UiWindow{
     // 拖拽逻辑辅助变量
     private double dragStartX, dragStartY; // 按下时的坐标
     private boolean isDraggingItem = false; // 是否已经触发了物品拿取
-    private static final double DRAG_THRESHOLD = 2.0; // 移动超过4像素才算拖拽
+    private static final double DRAG_THRESHOLD = 3.0; // 移动超过4像素才算拖拽
 
     private static final int TITLE_HEIGHT = 11; // 分类标题高度
     private static final int CATEGORY_PADDING = 3; // 分类间距
     private static final int ROW_GAP = 24;//每个图标的列间距
     private static final int COLS = 4;//每个图标横间距
     //布局
-    private static final int GRID_X = 13;
+    private static final int GRID_X = 11;
     private static final int GRID_Y = 10;
     private static final int COL_GAP = 20;
     private static final int MAX_Y = 146; // 列表底部Y坐标限制
@@ -49,6 +49,7 @@ public class SpellPage extends  SpellScreen.UiWindow{
     private static final int SCROLL_W = 12;
     private static final int SCROLL_H = 95;
     private static final int SCROLL_COLOR_LIGHT = 0xFFA57855;
+    private static final float SCROLL_STEP = 16.0f; // 每一格滚轮滚动多少像素(可改成 12/18/24 试手感)
 
     // 列表缓存与滚动
     private final Map<SchoolType, List<SpellPage.SpellListEntry>> groupedItemIndices = new LinkedHashMap<>();
@@ -132,7 +133,7 @@ public class SpellPage extends  SpellScreen.UiWindow{
         }
         if(!IsselectedEntry) {
            this.selectedEntry = null;
-            System.out.println("无了");
+
         }
 
         // === 排序与分组 (修改版 2.0) ===
@@ -187,8 +188,41 @@ public class SpellPage extends  SpellScreen.UiWindow{
         RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
         g.blit(TEXTURE, 0, 0, 13, 2, w, h, 512, 512);
         updateFilteredItems();
+        int visibleHeight = MAX_Y - GRID_Y;
+        if (this.cachedContentHeight <= visibleHeight) {
+            this.scrollOffs = 0.0f;
+        } else {
+            this.scrollOffs = Mth.clamp(this.scrollOffs, 0.0f, 1.0f);
+        }
         renderScrollableList(g);
 
+    }
+    @Override
+    public boolean mouseScrolled(double localX, double localY, double delta) {
+        // 只在鼠标位于列表可视区域时响应
+        if (localX < GRID_X || localX > (GRID_X + COLS * COL_GAP + 20)) return false;
+        if (localY < GRID_Y || localY > MAX_Y) return false;
+
+        int visibleHeight = MAX_Y - GRID_Y;
+        if (this.cachedContentHeight <= visibleHeight) return false; // 不需要滚动
+
+        // 最大可滚像素
+        int maxScrollPixels = this.cachedContentHeight - visibleHeight;
+
+        // 当前滚动像素
+        float currentPixels = this.scrollOffs * maxScrollPixels;
+
+        // delta：通常 >0 是向上滚，<0 是向下滚
+        // 向上滚：内容下移 => scrollPixels 减少
+        currentPixels -= (float) (delta * SCROLL_STEP);
+
+        // clamp
+        currentPixels = Mth.clamp(currentPixels, 0.0f, (float) maxScrollPixels);
+
+        // 转回 0~1
+        this.scrollOffs = currentPixels / (float) maxScrollPixels;
+
+        return true; // 吃掉滚轮事件
     }
     @Override
     public boolean mouseClicked(double localX, double localY, int button) {
@@ -270,7 +304,7 @@ public class SpellPage extends  SpellScreen.UiWindow{
         int winAbsX = guiLeft + 13;
         int winAbsY = guiTop + 2;
 
-        int scissorX = winAbsX + GRID_X;
+        int scissorX = winAbsX + GRID_X-2;
         int scissorY = winAbsY + GRID_Y;
         int scissorW = COLS * COL_GAP + 20; // 宽度稍微宽一点防止切字
         int scissorH = visibleHeight;
@@ -307,24 +341,39 @@ public class SpellPage extends  SpellScreen.UiWindow{
                 int itemX = GRID_X + col * COL_GAP;
                 int itemY = currentY + row * ROW_GAP;
 
-                // === 新增：绘制高亮选中框 ===
-                if (this.selectedEntry == se  ) { // se 是当前循环到的 entry
-                    guiGraphics.fill(itemX - 1, itemY - 1, itemX + 17, itemY + 17, 0xFF734C44); // 半透明白框
-                    System.out.println("画了=debug" );
+                // === 检测法术及其等级
+                boolean can_kuang = false;
+                if (this.selectedEntry != null && !this.isDraggingItem  ) {
+                    if (this.selectedEntry.spell == se.spell  ) { // se 是当前循环到的 entry
+                        if (this.selectedEntry.level == se.level) {
+                            can_kuang = true;
+                        }
+                    }
                 }
+
                 // 只绘制在可见区域内的
                 if (itemY + 16 >= GRID_Y && itemY <= MAX_Y) {
                     ResourceLocation icon = se.spell.getSpellIconResource();
-
                     // 绘制堆叠阴影
-                    if (se.totalCount > 1) {
-                        RenderSystem.setShaderColor(0.5F, 0.5F, 0.5F, 1.0F);
-                        guiGraphics.blit(icon, itemX + 2, itemY + 2, 0, 0, 16, 16, 16, 16);
+                    if (se.totalCount > 1 && !can_kuang) {
+                        RenderSystem.setShaderColor(1F, 1F, 0.2F, 1.0F);
+                        guiGraphics.blit(icon, itemX, itemY + 2, 2, 0, 16, 16, 16, 16);
                         RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
                     }
                     // 绘制本体
                     guiGraphics.blit(icon, itemX, itemY, 0, 0, 16, 16, 16, 16);
                     drawLevelBadge(guiGraphics, itemX, itemY, se.level);
+                    if (can_kuang && !this.isDraggingItem  ) {
+                                RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
+                                // 在物品图标外画一个 18x18 的选中框
+                                guiGraphics.blit(
+                                        TEXTURE,
+                                        itemX - 2, itemY - 2,   // 屏幕坐标（比物品大一圈）
+                                        57, 178,                // 贴图坐标（你画好的框）
+                                        19, 19,                 // 框的宽高
+                                        512, 512                // texture 尺寸
+                                );
+                    }
                 }
             }
 
@@ -358,11 +407,13 @@ public class SpellPage extends  SpellScreen.UiWindow{
 
         int slot = entry.pickOneSlot();
         if (slot != -1) {
+            //这只是复制
             ItemStack source = host.getMenu().playerInv.getItem(slot);
+
             ItemStack toHold = source.copy();
+            source.split(1);
             toHold.setCount(1);
             host.setMouseStack(toHold);
-
         }
     }
     @Override

@@ -13,7 +13,6 @@ public class SpellMenu extends AbstractContainerMenu {
     private final ContainerLevelAccess access;
     // 需要公开给 Screen 访问，用于读取玩家背包物品
     public final Inventory playerInv;
-
     // 客户端构造器
     public SpellMenu(int containerId, Inventory playerInv, FriendlyByteBuf extraData) {
         this(containerId, playerInv, ContainerLevelAccess.NULL);
