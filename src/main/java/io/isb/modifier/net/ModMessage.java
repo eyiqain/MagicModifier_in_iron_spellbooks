@@ -1,6 +1,7 @@
 package io.isb.modifier.net;
 
 import io.isb.modifier.MagicModifier;
+import io.isb.modifier.net.ui.*;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.network.NetworkDirection;
@@ -37,38 +38,57 @@ public class ModMessage {
                 .consumerMainThread(PacketUIAction::handle)
                 .add();
 
-        // === 刻印/合成相关包 ===
-        NETWORK.messageBuilder(PacketInscribeSpell.class, id(), NetworkDirection.PLAY_TO_SERVER)
-                .encoder(PacketInscribeSpell::encode)
-                .decoder(PacketInscribeSpell::decode)
-                .consumerMainThread(PacketInscribeSpell::handle)
-                .add();
 
-        NETWORK.messageBuilder(PacketExtractSpell.class, id(), NetworkDirection.PLAY_TO_SERVER)
-                .encoder(PacketExtractSpell::encode)
-                .decoder(PacketExtractSpell::decode)
-                .consumerMainThread(PacketExtractSpell::handle)
-                .add();
 
-        NETWORK.messageBuilder(PacketSwapBookSpell.class, id(), NetworkDirection.PLAY_TO_SERVER)
-                .encoder(PacketSwapBookSpell::encode)
-                .decoder(PacketSwapBookSpell::decode)
-                .consumerMainThread(PacketSwapBookSpell::handle)
-                .add();
-
-        NETWORK.messageBuilder(PacketPerformSynthesis.class, id(), NetworkDirection.PLAY_TO_SERVER)
-                .encoder(PacketPerformSynthesis::encode)
-                .decoder(PacketPerformSynthesis::decode)
-                .consumerMainThread(PacketPerformSynthesis::handle)
-                .add();
-
-        // 🔥🔥🔥 【新增】配置更新包 (修复报错的关键) 🔥🔥🔥
+        // 【新增】配置更新包 (修复报错的关键)
         // 注意：PacketUpdateConfig 用的是 toBytes 和 构造函数(new)，所以这里写法略有不同
         NETWORK.messageBuilder(PacketUpdateConfig.class, id(), NetworkDirection.PLAY_TO_SERVER)
                 .encoder(PacketUpdateConfig::toBytes) // 对应 PacketUpdateConfig 里的 public void toBytes(...)
                 .decoder(PacketUpdateConfig::new)    // 对应 PacketUpdateConfig 里的 public PacketUpdateConfig(buf)
                 .consumerMainThread(PacketUpdateConfig::handle)
                 .add();
+        // === 新 UI 交互包 (全链路同步) ===
+        NETWORK.messageBuilder(PacketPickupSpell.class, id(), NetworkDirection.PLAY_TO_SERVER)
+                .encoder(PacketPickupSpell::encode)
+                .decoder(PacketPickupSpell::decode)
+                .consumerMainThread(PacketPickupSpell::handle)
+                .add();
+        NETWORK.messageBuilder(PacketReturnCarried.class, id(), NetworkDirection.PLAY_TO_SERVER)
+                .encoder(PacketReturnCarried::encode)
+                .decoder(PacketReturnCarried::decode)
+                .consumerMainThread(PacketReturnCarried::handle)
+                .add();
+        // === 刻印/合成相关包 ===
+        NETWORK.messageBuilder(PacketInscribeSpell.class, id(), NetworkDirection.PLAY_TO_SERVER)
+                .encoder(PacketInscribeSpell::encode)
+                .decoder(PacketInscribeSpell::decode)
+                .consumerMainThread(PacketInscribeSpell::handle)
+                .add();
+        //=======合成管理=======
+        NETWORK.messageBuilder(PacketManageSynth.class, id(), NetworkDirection.PLAY_TO_SERVER)
+                .encoder(PacketManageSynth::encode)
+                .decoder(PacketManageSynth::decode)
+                .consumerMainThread(PacketManageSynth::handle)
+                .add();
+        NETWORK.messageBuilder(PacketExtractSpell.class, id(), NetworkDirection.PLAY_TO_SERVER)
+                .encoder(PacketExtractSpell::encode)
+                .decoder(PacketExtractSpell::decode)
+                .consumerMainThread(PacketExtractSpell::handle)
+                .add();
+        NETWORK.messageBuilder(PacketSyncSynth.class, id(), NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(PacketSyncSynth::encode)
+                .decoder(PacketSyncSynth::decode)
+                .consumerMainThread(PacketSyncSynth::handle)
+                .add();
+        // === 新增：直接提取到背包的包 ===
+        NETWORK.messageBuilder(PacketExtractToInv.class, id(), NetworkDirection.PLAY_TO_SERVER)
+                .encoder(PacketExtractToInv::encode)
+                .decoder(PacketExtractToInv::decode)
+                .consumerMainThread(PacketExtractToInv::handle)
+                .add();
+
+
+
     }
 
     public static <MSG> void sendToAll(MSG message) {

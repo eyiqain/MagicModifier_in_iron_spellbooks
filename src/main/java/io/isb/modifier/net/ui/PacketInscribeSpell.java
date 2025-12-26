@@ -1,6 +1,5 @@
-package io.isb.modifier.net;
+package io.isb.modifier.net.ui;
 
-import io.isb.modifier.gui.SpellMenu;
 import io.redspace.ironsspellbooks.api.spells.ISpellContainer;
 import io.redspace.ironsspellbooks.api.spells.SpellData;
 import io.redspace.ironsspellbooks.api.util.Utils;
@@ -14,50 +13,51 @@ import net.minecraftforge.network.NetworkEvent;
 import java.util.function.Supplier;
 
 public class PacketInscribeSpell {
-    private final int inventorySlotIndex;
     private final int bookSlotIndex;
 
-    public PacketInscribeSpell(int inventorySlotIndex, int bookSlotIndex) {
-        this.inventorySlotIndex = inventorySlotIndex;
+    // 只需传入目标书本的槽位，源物品默认从鼠标取
+    public PacketInscribeSpell(int bookSlotIndex) {
         this.bookSlotIndex = bookSlotIndex;
     }
 
     public static void encode(PacketInscribeSpell msg, FriendlyByteBuf buffer) {
-        buffer.writeInt(msg.inventorySlotIndex);
         buffer.writeInt(msg.bookSlotIndex);
     }
 
     public static PacketInscribeSpell decode(FriendlyByteBuf buffer) {
-        return new PacketInscribeSpell(buffer.readInt(), buffer.readInt());
+        return new PacketInscribeSpell(buffer.readInt());
     }
 
     public static void handle(PacketInscribeSpell msg, Supplier<NetworkEvent.Context> ctx) {
         ctx.get().enqueueWork(() -> {
             ServerPlayer player = ctx.get().getSender();
             if (player != null) {
+                // 1. 获取副手/主手的法术书
                 ItemStack bookStack = Utils.getPlayerSpellbookStack(player);
                 if (bookStack == null || !(bookStack.getItem() instanceof SpellBook)) return;
 
-                ItemStack scrollStack = player.getInventory().getItem(msg.inventorySlotIndex);
-                if (!(scrollStack.getItem() instanceof Scroll)) return;
+                // 2. 获取鼠标上的物品 (核心修改点)
+                ItemStack mouseStack = player.containerMenu.getCarried();
+                if (mouseStack.isEmpty() || !(mouseStack.getItem() instanceof Scroll)) return;
 
+                // 3. 提取数据
                 ISpellContainer bookContainer = ISpellContainer.get(bookStack);
-                ISpellContainer scrollContainer = ISpellContainer.get(scrollStack);
+                ISpellContainer scrollContainer = ISpellContainer.get(mouseStack);
                 SpellData spellData = scrollContainer.getSpellAtIndex(0);
 
+                // 4. 执行抄写逻辑
                 if (bookContainer.addSpellAtIndex(spellData.getSpell(), spellData.getLevel(), msg.bookSlotIndex, false, bookStack)) {
 
-                    // 1) 把书的法术写回 NBT
+                    // 保存书本 NBT
                     bookContainer.save(bookStack);
 
-                    // 2) 消耗卷轴
-                    player.getInventory().removeItem(msg.inventorySlotIndex, 1);
+                    // 5. 消耗鼠标上的物品
+                    mouseStack.shrink(1); // 数量减1
+                    player.containerMenu.setCarried(mouseStack); // 更新服务端状态
 
-                    // 3) 标记背包变更 + 强制容器同步
+                    // 6. 同步
                     player.getInventory().setChanged();
-                    player.containerMenu.slotsChanged(player.getInventory());
                     player.containerMenu.broadcastChanges();
-                    player.inventoryMenu.broadcastChanges(); // 可选但很有用
                 }
             }
         });

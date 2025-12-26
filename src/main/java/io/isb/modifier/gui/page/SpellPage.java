@@ -2,21 +2,22 @@ package io.isb.modifier.gui.page;
 
 import com.mojang.blaze3d.systems.RenderSystem;
 import io.isb.modifier.gui.SpellScreen;
+import io.isb.modifier.net.ModMessage;
+import io.isb.modifier.net.ui.PacketPickupSpell;
 import io.redspace.ironsspellbooks.api.spells.AbstractSpell;
 import io.redspace.ironsspellbooks.api.spells.ISpellContainer;
 import io.redspace.ironsspellbooks.api.spells.SchoolType;
 import io.redspace.ironsspellbooks.api.spells.SpellData;
 import io.redspace.ironsspellbooks.item.Scroll;
+import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
 
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 import static io.isb.modifier.gui.SpellScreen.TEXTURE;
 
@@ -82,6 +83,10 @@ public class SpellPage extends  SpellScreen.UiWindow{
     /** 核心逻辑：重新计算左侧列表显示的物品
      * 包含“鼠标拿着”、“合成槽占用”和“产物待领取”的三重扣除逻辑
      */
+    @Override
+    public void clearSelection() {
+        this.selectedEntry = null; // 清空本地选中
+    }
     private void updateFilteredItems() {
         groupedItemIndices.clear();//列表，为了实时更新列表会经常修改
         Inventory inv = this.host.getMenu().playerInv;//玩家的背包
@@ -232,11 +237,13 @@ public class SpellPage extends  SpellScreen.UiWindow{
         SpellListEntry entry = getEntryAtPosition(localX, localY);
         System.out.println("mouseclick ");
         if (entry != null) {
-            System.out.println("mouseclick : entry= " + entry.spell.getSpellName());
+            System.out.println("mouseclick(spell) : entry= " + entry.spell.getSpellName());
             this.selectedEntry = entry;
             this.dragStartX = localX;
             this.dragStartY = localY;
             this.isDraggingItem = false;
+            // 【添加这行】告诉主类：我选中东西了，让右边那个把手松开
+            this.host.claimSelectionFocus(this);
             // 播放个点击音效不错
             // Minecraft.getInstance().getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, 1.0F));
             return true; // 抢占焦点
@@ -248,7 +255,7 @@ public class SpellPage extends  SpellScreen.UiWindow{
     @Override
     public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
         // 如果已经开始拿物品了，就不做额外逻辑，交给 host 的 render 渲染鼠标栈即可
-        if (isDraggingItem) return true;
+        if (isDraggingItem || !host.getMouseStack().isEmpty()) return true;
 
         // 计算移动距离
         double dist = Math.sqrt(Math.pow(mouseX - dragStartX, 2) + Math.pow(mouseY - dragStartY, 2));
@@ -257,6 +264,12 @@ public class SpellPage extends  SpellScreen.UiWindow{
         if (dist > DRAG_THRESHOLD && this.selectedEntry != null) {
             // 1. 真正执行“拿取物品”逻辑
             doPickupItem(this.selectedEntry);
+            //调试debug
+            ISpellContainer container = ISpellContainer.get(this.host.getMouseStack());
+            SpellData spellData = container.getSpellAtIndex(0);
+            if(spellData != SpellData.EMPTY){
+                System.out.println("mouseclick(Screen这里) :法术： " + spellData.getSpell().getSpellName()+"等级:"+spellData.getLevel());
+            }
             // 2. 标记为正在拖拽
             this.isDraggingItem = true;
             // 3. (可选) 拖起物品后，通常取消高亮选中，或者保留看你喜好
@@ -354,12 +367,13 @@ public class SpellPage extends  SpellScreen.UiWindow{
                 // 只绘制在可见区域内的
                 if (itemY + 16 >= GRID_Y && itemY <= MAX_Y) {
                     ResourceLocation icon = se.spell.getSpellIconResource();
-                    // 绘制堆叠阴影
-                    if (se.totalCount > 1 && !can_kuang) {
-                        RenderSystem.setShaderColor(1F, 1F, 0.2F, 1.0F);
-                        guiGraphics.blit(icon, itemX, itemY + 2, 2, 0, 16, 16, 16, 16);
-                        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
-                    }
+
+//                    // 绘制堆叠阴影
+//                    if (se.totalCount > 1 && !can_kuang) {
+//                        RenderSystem.setShaderColor(1F, 1F, 0.2F, 1.0F);
+//                        guiGraphics.blit(icon, itemX, itemY + 2, 2, 0, 16, 16, 16, 16);
+//                        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
+//                    }
                     // 绘制本体
                     guiGraphics.blit(icon, itemX, itemY, 0, 0, 16, 16, 16, 16);
                     drawLevelBadge(guiGraphics, itemX, itemY, se.level);
@@ -376,7 +390,6 @@ public class SpellPage extends  SpellScreen.UiWindow{
                     }
                 }
             }
-
             // 计算下一组的Y偏移
             int rows = (entries.size() + COLS - 1) / COLS;
             if (rows > 0) currentY += (rows * ROW_GAP) - (ROW_GAP - 16) + CATEGORY_PADDING;
@@ -399,41 +412,63 @@ public class SpellPage extends  SpellScreen.UiWindow{
     public boolean mouseReleased(double localX, double localY, int button) {
         // 1. 结束拖拽状态
         this.isDraggingItem = false;
-        return true;
+
+        return false;
     }
 
     // 执行拿取逻辑
-    private void doPickupItem(SpellListEntry entry) {
+    // 执行拿取逻辑
 
+    private void doPickupItem(SpellListEntry entry) {
         int slot = entry.pickOneSlot();
         if (slot != -1) {
-            //这只是复制
-            ItemStack source = host.getMenu().playerInv.getItem(slot);
+            // 获取客户端玩家对象
+            var player = this.host.getMinecraft().player;
+            if (player == null) return;
 
-            ItemStack toHold = source.copy();
-            source.split(1);
-            toHold.setCount(1);
-            host.setMouseStack(toHold);
+            // --- 1. 客户端视觉预测 (Client-side Prediction) ---
+            // 获取客户端背包里的那个物品堆
+            ItemStack clientStack = this.host.getMenu().playerInv.getItem(slot);
+
+            if (!clientStack.isEmpty()) {
+                // 【关键步骤】直接在客户端内存中扣除数量！
+                // split(1) 会修改 clientStack 的 count，并返回分出来的 1 个物品
+                ItemStack visualHeldStack = clientStack.split(1);
+
+                // 【关键步骤】立即设置到客户端的鼠标上
+                // 这样 renderTooltip 和 render 方法里的 host.getMouseStack() 才能立马读到东西
+                this.host.getMenu().setCarried(visualHeldStack);
+            }
+
+            // --- 2. 告诉服务端同步状态 ---
+            // 发送包：告诉服务器“我实际执行了这个操作，请校验并同步”
+            ModMessage.sendToServer(new PacketPickupSpell(slot));
+
+            // --- 3. 强制触发一次列表更新 ---
+            // 虽然 render 会每帧调用，但手动重置一下状态是个好习惯，确保 selectedEntry 状态正确
+            this.updateFilteredItems();
         }
     }
     @Override
     public void renderTooltips(GuiGraphics g,int mouseX, int mouseY, int localX, int localY) {
         // 1. 直接复用查找逻辑
         SpellListEntry entry = getEntryAtPosition(localX, localY);
-
+        System.out.println("Tooltips（spell）:DEBUG");
         if (entry != null) {
             // 2. 找到对应的真实物品
             int slot = entry.pickOneSlot();
             if (slot != -1) {
                 ItemStack stack = this.host.getMenu().playerInv.getItem(slot);
                 if (!stack.isEmpty()) {
-                    // 3. 调用 MC 原生 Tooltip 渲染
-                    g.renderTooltip(
-                            this.host.getMinecraft().font,
-                            stack,
-                            mouseX,
-                            mouseY
-                    );
+                    if(stack.getItem() instanceof Scroll){
+                        List<Component> tooltip = stack.getTooltipLines(this.host.getMinecraft().player, net.minecraft.client.Minecraft.getInstance().options.advancedItemTooltips ? net.minecraft.world.item.TooltipFlag.Default.ADVANCED : net.minecraft.world.item.TooltipFlag.Default.NORMAL);
+                        // ▼▼▼▼▼▼▼▼▼▼▼▼▼▼ 这里是插入显示数量的代码 ▼▼▼▼▼▼▼▼▼▼▼▼▼▼
+                        tooltip.add(1, Component.literal(" 数量: " + entry.totalCount).withStyle(ChatFormatting.GRAY));
+                        // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+                        g.renderTooltip(this.host.getMinecraft().font, tooltip, Optional.empty(), mouseX, mouseY);
+                    }
+
+
                 }
             }
         }

@@ -8,7 +8,7 @@ import static io.isb.modifier.gui.SpellScreen.TEXTURE;
 
 public class InstructionPage extends SpellScreen.UiWindow {
 
-    protected InstructionPage(SpellScreen host) {
+    public InstructionPage(SpellScreen host) {
         super(host);
 
     }

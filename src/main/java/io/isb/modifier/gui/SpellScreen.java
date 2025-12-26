@@ -3,8 +3,11 @@ package io.isb.modifier.gui;
 import com.mojang.blaze3d.systems.RenderSystem;
 import io.isb.modifier.MagicModifier;
 import io.isb.modifier.gui.page.FunctionPage;
+import io.isb.modifier.gui.page.InstructionPage;
 import io.isb.modifier.gui.page.ModifyPage;
 import io.isb.modifier.gui.page.SpellPage;
+import io.isb.modifier.net.ModMessage;
+import io.isb.modifier.net.ui.PacketReturnCarried;
 import io.redspace.ironsspellbooks.api.spells.AbstractSpell;
 import io.redspace.ironsspellbooks.api.spells.ISpellContainer;
 import io.redspace.ironsspellbooks.api.spells.SpellData;
@@ -21,69 +24,49 @@ import java.util.List;
 
 /**
  * 主UI壳：SpellBrowserScreen
- * <p>
- * 核心架构：
- * 1. 左右双窗口系统（Left/Right），每个区域同时只能 Active 一个窗口。
- * 2. 局部坐标系：子窗口只处理 (0,0) 开始的局部坐标，主类负责 Translate。
- * 3. 焦点机制（Focus）：
- *    - 点击时抢占 Focus。
- *    - 拖拽/释放只有 Focus 窗口响应（防止拖出窗口后事件丢失或串窗口）。
- *    - Hover/Tooltip 只要鼠标在区域内，Active 窗口均可响应。
- * 4. 鼠标临时栈：主类统一管理 1 个 ItemStack，关闭时归还。
  */
 public class SpellScreen extends AbstractContainerScreen<SpellMenu> {
 
-    // =========================================
-    // 0. 常量定义：纹理与窗口布局
-    // =========================================
     public static final ResourceLocation TEXTURE =
             new ResourceLocation(MagicModifier.MODID, "textures/gui/spell_inscription.png");
-    //鼠标栈获得物品
-    // 列表动画 (消耗时的闪烁/暂存逻辑/不想瞬间消失)
-    private boolean pendingConsume = false;
-    private int pendingSlotIndex = -1;
-    private int pendingTicks = 0;
-    /** 左窗口默认区域（相对 GUI 左上角） */
+
+    private ItemStack mouseStack = ItemStack.EMPTY;
+
+    // 窗口布局常量
     private static final int LEFT_ORIGIN_X = 13;
     private static final int LEFT_ORIGIN_Y = 2;
-    private static final int LEFT_W = 118; // 示例宽度
-    private static final int LEFT_H = 162; // 示例高度
+    private static final int LEFT_W = 118;
+    private static final int LEFT_H = 162;
 
-    /** 右窗口默认区域（相对 GUI 左上角） */
     private static final int RIGHT_ORIGIN_X = 147;
     private static final int RIGHT_ORIGIN_Y = 2;
     private static final int RIGHT_W = 118;
     private static final int RIGHT_H = 162;
 
-    /** 切页按钮布局 */
+    // 按钮布局
+
+    // 按钮大小
     private static final int TAB_BTN_W = 22;
     private static final int TAB_BTN_H = 27;
-    private static final int TAB_SCREEN_Y = 178;
-    private static final int TAB_SCREEN_X_1 = 137;
-    private static final int TAB_SCREEN_X_2 = 137 + 22;
 
-    // =========================================
-    // 1. 核心状态：鼠标栈 & 窗口管理
-    // =========================================
-    /** 鼠标栈：只允许持有 1 个物品（如书页/卷轴），关闭UI时归还 */
-    private ItemStack mouseStack = ItemStack.EMPTY;
-    /** 左右窗口列表（按注册顺序存储） */
+    // 按钮在屏幕上的位置 (相对 guiLeft, guiTop)
+    private static final int TAB_BTN_X_START = 161; // 起始X
+    private static final int TAB_BTN_Y_OFFSET = -23; // 起始Y (负数表示在界面上方突出)
+
+    // 贴图 UV 配置
+    private static final int TAB_TEX_U_START = 137; // 贴图起始 U
+    private static final int TAB_TEX_V_START = 178; // 贴图起始 V
+
     private final List<UiWindow> leftWindows = new ArrayList<>();
     private final List<UiWindow> rightWindows = new ArrayList<>();
-    /** 当前激活的窗口 */
+
     private UiWindow activeLeftWindow;
     private UiWindow activeRightWindow;
-    /** ID 生成器 */
     private int nextWindowId = 1;
-    /**
-     * 焦点窗口：当前正在进行“点击/拖拽”交互的窗口。
-     * - 点击时：如果 mouseClicked 返回 true，则该窗口获得焦点。
-     * - 拖拽/释放时：只分发给 focusedWindow（忽略鼠标位置是否在窗口内）。
-     * - 释放后：清空焦点。
-     */
+
     private UiWindow focusedWindow = null;
-    /** 是否正在进行拖拽手势 */
     private boolean isDraggingGesture = false;
+
     public SpellScreen(SpellMenu menu, Inventory inventory, Component title) {
         super(menu, inventory, title);
         this.imageWidth = 277;
@@ -91,45 +74,48 @@ public class SpellScreen extends AbstractContainerScreen<SpellMenu> {
         this.inventoryLabelY = -1000;
         this.titleLabelY = -1000;
     }
-    // =========================================
-    // 2. 初始化与窗口注册
-    // =========================================
+
     @Override
     protected void init() {
         super.init();
-        // 清理旧状态
+        // 【关键修复 1】：必须清理列表，防止每次调整窗口大小时重复添加窗口
+        leftWindows.clear();
+        rightWindows.clear();
         leftWindows.clear();
         rightWindows.clear();
         nextWindowId = 1;
         focusedWindow = null;
-        // --- 注册窗口 ---
-        // 注册时会自动分配 ID，并按 Side 加入列表
-        // 左侧案例：窗口1（列表）
+
+        // 注册窗口
         registerWindow(WindowSide.LEFT, new SpellPage(this));
-        // 右侧案例：窗口1（书本），窗口2（占位符）
+
+        // 注册右侧功能页
         registerWindow(WindowSide.RIGHT, new FunctionPage(this));
-        registerWindow(WindowSide.RIGHT, new ModifyPage(this));
-        // 默认激活第一个
+        //registerWindow(WindowSide.RIGHT, new ModifyPage(this));
+         registerWindow(WindowSide.RIGHT, new InstructionPage(this)); // 如有
+
         if (!leftWindows.isEmpty()) activeLeftWindow = leftWindows.get(0);
         if (!rightWindows.isEmpty()) activeRightWindow = rightWindows.get(0);
-        // 触发生命周期
+
         if (activeLeftWindow != null) activeLeftWindow.onShow();
         if (activeRightWindow != null) activeRightWindow.onShow();
     }
-    /** 注册窗口并注入 ID/Side/Meta */
+    public UiWindow getActiveRightWindow(){
+        return activeRightWindow;
+    }
+    public UiWindow getActiveLeftWindow(){
+        return activeRightWindow;
+    }
+
     private void registerWindow(WindowSide side, UiWindow window) {
         int id = nextWindowId++;
-        // 注入元数据：ID, Side, 局部宽高 (origin在运行时动态计算)
         int w = (side == WindowSide.LEFT) ? LEFT_W : RIGHT_W;
         int h = (side == WindowSide.LEFT) ? LEFT_H : RIGHT_H;
         window._injectMeta(id, side, w, h);
-        if (side == WindowSide.LEFT) {
-            leftWindows.add(window);
-        } else {
-            rightWindows.add(window);
-        }
+        if (side == WindowSide.LEFT) leftWindows.add(window);
+        else rightWindows.add(window);
     }
-    /** 切换右侧窗口 */
+
     public void switchRightWindow(int index) {
         if (index < 0 || index >= rightWindows.size()) return;
         UiWindow target = rightWindows.get(index);
@@ -138,164 +124,133 @@ public class SpellScreen extends AbstractContainerScreen<SpellMenu> {
         activeRightWindow = target;
         if (activeRightWindow != null) activeRightWindow.onShow();
     }
-    /** 切换左侧窗口 */
-    public void switchLeftWindow(int index) {
-        if (index < 0 || index >= leftWindows.size()) return;
-        UiWindow target = leftWindows.get(index);
-        if (target == activeRightWindow) return;
-        if (activeLeftWindow != null) activeLeftWindow.onHide();
-        activeLeftWindow = target;
-        if (activeLeftWindow != null) activeLeftWindow.onShow();
-    }
-    // =========================================
-    // 3. 渲染循环 (Render Loop)
-    // =========================================
+
+    // ================= 渲染逻辑 =================
+
     @Override
     public void render(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
-        if (pendingConsume) {
-            pendingTicks++;
-            if (pendingTicks > 20) {
-                pendingConsume = false;
-                pendingSlotIndex = -1;
-            }
-        }
         this.renderBackground(g);
-        super.render(g, mouseX, mouseY, partialTick); // 会调用 renderBg 和 renderLabels(空)
-         // 2. === 核心：最后绘制 Tooltips (最顶层) ===
-        // 即使没有 Focus，只要鼠标悬停在上面，就需要显示提示
 
-        // 处理左窗口 Tooltips
-        if (activeLeftWindow != null) {
-            // 手动计算局部坐标 (不使用 pose 平移，只算数值)
-            int guiLeft = (this.width - this.imageWidth) / 2;
-            int guiTop = (this.height - this.imageHeight) / 2;
-            int localX = mouseX - (guiLeft + LEFT_ORIGIN_X);
-            int localY = mouseY - (guiTop + LEFT_ORIGIN_Y);
+        // 注意：不要调用 super.render，因为它会调用原生的 renderLabels 和 renderTooltip
+        // 我们需要自己控制顺序，或者确保 super.render 不会画出多余的东西
+        // 通常建议是先画背景，再画窗口，最后画鼠标物品
 
-            // 判断鼠标是否在窗口范围内 (可选，优化性能)
-            if (localX >= 0 && localX < activeLeftWindow.getWidth() &&
-                    localY >= 0 && localY < activeLeftWindow.getHeight()) {
+        // 1. 画背景和窗口 (复用你的 renderBg 逻辑，或者直接调用 super.renderBg 如果你复写了它)
+        // 但根据你的代码结构，你是在 renderBg 里画窗口的，所以：
+        super.render(g, mouseX, mouseY, partialTick);
 
-                // 传入 全局坐标(用于画) + 局部坐标(用于找)
-                activeLeftWindow.renderTooltips(g, mouseX, mouseY, localX, localY);
-            }
-        }
+        // ... (dispatchToWindow 逻辑保持不变) ...
 
-        // 处理右窗口 Tooltips (同理)
-        if (activeRightWindow != null) {
-            int guiLeft = (this.width - this.imageWidth) / 2;
-            int guiTop = (this.height - this.imageHeight) / 2;
-            int localX = mouseX - (guiLeft + RIGHT_ORIGIN_X);
-            int localY = mouseY - (guiTop + RIGHT_ORIGIN_Y);
+        // 2. 渲染鼠标手中的物品 (改成从 Menu 获取)
+        ItemStack carried = getMouseStack(); // 使用修改后的 getter
+        if (!carried.isEmpty()) {
+            // 渲染物品本身
+            g.renderItem(carried, mouseX - 8, mouseY - 8);
+            // 渲染数量
+            g.renderItemDecorations(this.font, carried, mouseX - 8, mouseY - 8, null);
 
-            if (localX >= 0 && localX < activeRightWindow.getWidth() &&
-                    localY >= 0 && localY < activeRightWindow.getHeight()) {
-
-                activeRightWindow.renderTooltips(g, mouseX, mouseY, localX, localY);
-            }
-        }
-        // --- 渲染鼠标栈物品 ---
-        if (!mouseStack.isEmpty()) {
-            g.renderItem(mouseStack, mouseX - 8, mouseY - 8);
-            if (mouseStack.getItem() instanceof Scroll) {
-                //2. 获取容器 (这是模组的核心 API)
-                ISpellContainer container = ISpellContainer.get(mouseStack);
+            // 如果是卷轴，绘制悬浮的大图标
+            if (carried.getItem() instanceof Scroll) {
+                ISpellContainer container = ISpellContainer.get(carried);
                 SpellData spellData = container.getSpellAtIndex(0);
                 drawFloatingIcon(g, mouseX, mouseY, spellData);
             }
-        }else{
-            // --- 渲染 Tooltip (物品栏的) ---
+        } else {
+            // B. 【核心修复】：显式渲染子窗口的 Tooltip！！！
+            // 必须手动检查左右窗口
+            if (activeLeftWindow != null) {
+                renderWindowTooltips(activeLeftWindow, g, mouseX, mouseY);
+            }
+            if (activeRightWindow != null) {
+                renderWindowTooltips(activeRightWindow, g, mouseX, mouseY);
+            }
+            // 只有鼠标没东西时才显示 Tooltip
             this.renderTooltip(g, mouseX, mouseY);
         }
     }
+
+    private void renderWindowTooltips(UiWindow win, GuiGraphics g, int mx, int my) {
+        int guiLeft = (this.width - this.imageWidth) / 2;
+        int guiTop = (this.height - this.imageHeight) / 2;
+        int ox = (win.getSide() == WindowSide.LEFT) ? LEFT_ORIGIN_X : RIGHT_ORIGIN_X;
+        int oy = (win.getSide() == WindowSide.LEFT) ? LEFT_ORIGIN_Y : RIGHT_ORIGIN_Y;
+
+        int lx = mx - (guiLeft + ox);
+        int ly = my - (guiTop + oy);
+
+        if (lx >= 0 && lx < win.getWidth() && ly >= 0 && ly < win.getHeight()) {
+            win.renderTooltips(g, mx, my, lx, ly);
+        }
+    }
+
     @Override
     protected void renderBg(GuiGraphics g, float partialTick, int mouseX, int mouseY) {
         RenderSystem.setShaderColor(1F, 1F, 1F, 1F);
         int guiLeft = (this.width - this.imageWidth) / 2;
         int guiTop  = (this.height - this.imageHeight) / 2;
 
-        // 1. 画大背景 (绝对坐标，原封不动)
         g.blit(TEXTURE, guiLeft, guiTop, 0, 0, this.imageWidth, this.imageHeight, 512, 512);
 
-        // 2. 画切页按钮
         renderTabButtons(g, guiLeft, guiTop, mouseX, mouseY);
-        // 3. 渲染左窗口 (Translate -> Local Render)
-        if (activeLeftWindow != null) {
-            int ox = guiLeft + LEFT_ORIGIN_X;
-            int oy = guiTop + LEFT_ORIGIN_Y;
-            int lx = mouseX - ox;
-            int ly = mouseY - oy;
-            g.pose().pushPose();
-            g.pose().translate(ox, oy, 0);
-            // 子类收到的是局部 lx, ly 和 宽高
-            activeLeftWindow.render(g, activeLeftWindow.getWidth(), activeLeftWindow.getHeight(), lx, ly, partialTick);
-            g.pose().popPose();
-        }
-        // 4. 渲染右窗口 (Translate -> Local Render)
-        if (activeRightWindow != null) {
-            int ox = guiLeft + RIGHT_ORIGIN_X;
-            int oy = guiTop + RIGHT_ORIGIN_Y;
-            int lx = mouseX - ox;
-            int ly = mouseY - oy;
-            g.pose().pushPose();
-            g.pose().translate(ox, oy, 0);
-            activeRightWindow.render(g, activeRightWindow.getWidth(), activeRightWindow.getHeight(), lx, ly, partialTick);
-            g.pose().popPose();
-        }
-    }
-    /** 绘制切页按钮 */
-    private void renderTabButtons(GuiGraphics g, int left, int top, int mouseX, int mouseY) {
-        int b1x = left + TAB_SCREEN_X_1;
-        int b1y = top + TAB_SCREEN_Y;
-        int b2x = left + TAB_SCREEN_X_2;
-        int b2y = top + TAB_SCREEN_Y;
+        // 【关键修复 2】：确保只渲染 active 的那个，不要写成 for 循环遍历 rightWindows
+        if (activeLeftWindow != null)
+            renderWindow(activeLeftWindow, g, guiLeft, guiTop, mouseX, mouseY, partialTick);
 
-        boolean r1Active = (activeRightWindow != null && !rightWindows.isEmpty() && activeRightWindow == rightWindows.get(0));
-        boolean r2Active = (activeRightWindow != null && rightWindows.size() > 1 && activeRightWindow == rightWindows.get(1));
+        if (activeRightWindow != null)
+            renderWindow(activeRightWindow, g, guiLeft, guiTop, mouseX, mouseY, partialTick);
 
-        // 示例：用颜色区分，你以后换成 blit 贴图
-        g.fill(b1x, b1y, b1x + TAB_BTN_W, b1y + TAB_BTN_H, r1Active ? 0xFF00AA00 : 0xFF555555);
-        g.fill(b2x, b2y, b2x + TAB_BTN_W, b2y + TAB_BTN_H, r2Active ? 0xFF00AA00 : 0xFF555555);
     }
-    // =========================================
-    // 4. 输入事件分发 (Event Dispatch)
-    // =========================================
+
+    private void renderWindow(UiWindow win, GuiGraphics g, int guiLeft, int guiTop, int mx, int my, float partialTick) {
+        int ox = (win.getSide() == WindowSide.LEFT) ? LEFT_ORIGIN_X : RIGHT_ORIGIN_X;
+        int oy = (win.getSide() == WindowSide.LEFT) ? LEFT_ORIGIN_Y : RIGHT_ORIGIN_Y;
+
+        int lx = mx - (guiLeft + ox);
+        int ly = my - (guiTop + oy);
+
+        g.pose().pushPose();
+        g.pose().translate(guiLeft + ox, guiTop + oy, 0);
+        win.render(g, win.getWidth(), win.getHeight(), lx, ly, partialTick);
+        g.pose().popPose();
+    }
+
+
+    // ================= 事件处理 =================
+
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (handleTabButtonsClick(mouseX, mouseY, button)) return true;
+
         if (focusedWindow != null) return true;
 
-        // 试探右窗口
-        if (dispatchToWindow(activeLeftWindow, mouseX, mouseY, (w, lx, ly, inside) -> {
+        // 优先分发给右窗口
+        if (dispatchToWindow(activeRightWindow, mouseX, mouseY, (w, lx, ly, inside) -> {
             if (!inside) return false;
-            // 点击必须在窗口内
-            if (w.mouseClicked(lx, ly, button))
-            {   focusedWindow = w;
-                // 抢占焦点
+            if (w.mouseClicked(lx, ly, button)) {
+                focusedWindow = w;
                 isDraggingGesture = true;
                 return true;
-            } return false;
-        })) return true;
-        // 试探右窗口
-        if (dispatchToWindow(activeLeftWindow, mouseX, mouseY, (w, lx, ly, inside) -> {
-            if (!inside) return false;
-            // 点击必须在窗口内
-            if (w.mouseClicked(lx, ly, button))
-            { focusedWindow = w;
-                // 抢占焦点
-                isDraggingGesture = true;
-                return true;
-            } return false;
+            }
+            return false;
         })) return true;
 
-        // 4. 如果子窗口没处理，交给 super (处理原版背包点击等)
+        // 分发给左窗口
+        if (dispatchToWindow(activeLeftWindow, mouseX, mouseY, (w, lx, ly, inside) -> {
+            if (!inside) return false;
+            if (w.mouseClicked(lx, ly, button)) {
+                focusedWindow = w;
+                isDraggingGesture = true;
+                return true;
+            }
+            return false;
+        })) return true;//与里面的结果一致
+
         return super.mouseClicked(mouseX, mouseY, button);
     }
 
     @Override
     public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
-        // 只有在拖拽手势且有焦点时才分发
         if (isDraggingGesture && focusedWindow != null) {
-            // 这里不需要 inside 检查：拖出窗口也要发给 focus
             return dispatchToWindow(focusedWindow, mouseX, mouseY, (w, lx, ly, inside) ->
                     w.mouseDragged(lx, ly, button, dragX, dragY)
             );
@@ -303,80 +258,84 @@ public class SpellScreen extends AbstractContainerScreen<SpellMenu> {
         return super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
     }
 
+
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
-        if (focusedWindow != null) {
-            boolean consumed = dispatchToWindow(focusedWindow, mouseX, mouseY, (w, lx, ly, inside) ->
-                    w.mouseReleased(lx, ly, button)
-            );
-            // 无论是否消费，Release 后必须释放焦点
-            focusedWindow = null;
-            isDraggingGesture = false;
-            if (consumed) return true;
+        boolean consumed = false;
+        System.out.println("debug:ID " + activeRightWindow.windowId);
+        // 先问右侧激活窗口 (FunctionPage 或 ModifyPage)
+        //调试debug
+        ISpellContainer container = ISpellContainer.get(this.getMouseStack());
+        System.out.println("主类-released"+this.getMouseStack().getItem());
+        SpellData spellData = container.getSpellAtIndex(0);
+        if(spellData != SpellData.EMPTY){
+            System.out.println("Release(Screen这里) :法术： " + spellData.getSpell().getSpellName()+"等级:"+spellData.getLevel());
         }
-        return super.mouseReleased(mouseX, mouseY, button);
+        if (activeRightWindow != null) {
+            consumed = dispatchToWindow(activeRightWindow, mouseX, mouseY, (w, lx, ly, inside) ->
+                    // 只有在窗口范围内释放，或者窗口处于某种特殊状态时才处理
+                    inside && w.mouseReleased(lx, ly, button)
+            );
+        }
+        // 如果右侧没处理，再问左侧激活窗口 (SpellPage)
+        if (!consumed && activeLeftWindow != null) {
+            consumed = dispatchToWindow(activeLeftWindow, mouseX, mouseY, (w, lx, ly, inside) ->
+                    inside && w.mouseReleased(lx, ly, button)
+            );
+        }
+        //}
+        // 3. 【核心兜底逻辑】：全局归还机制
+        // 如果鼠标上有东西，而且刚才没有任何子窗口返回 true (consumed == false)
+        if (!getMouseStack().isEmpty() && !consumed) {
+            // 视觉上立即拿走，防止重复触发
+            //takeMouseStack();//这是客户端逻辑
+            // 调用我们修改后的 returnStackToPlayer (发送归还包)
+            returnStackToPlayer(getMouseStack());
+            consumed = true;
+        }
+
+        // 清理拖拽状态
+        focusedWindow = null;
+        isDraggingGesture = false;
+
+        // 调用 super 确保原版逻辑（如 NEI/JEI 兼容等）正常运行
+        return consumed || super.mouseReleased(mouseX, mouseY, button);
+    }
+
+    private boolean isHoveringWindow(UiWindow w, int mx, int my) {
+        if (w == null) return false;
+        int guiLeft = (this.width - this.imageWidth) / 2;
+        int guiTop = (this.height - this.imageHeight) / 2;
+        int ox = (w.getSide() == WindowSide.LEFT) ? LEFT_ORIGIN_X : RIGHT_ORIGIN_X;
+        int oy = (w.getSide() == WindowSide.LEFT) ? LEFT_ORIGIN_Y : RIGHT_ORIGIN_Y;
+        int gx = guiLeft + ox;
+        int gy = guiTop + oy;
+        return mx >= gx && mx < gx + w.getWidth() && my >= gy && my < gy + w.getHeight();
     }
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double delta) {
-        // 滚轮不需要焦点，谁在鼠标下谁响应
-        // 右窗口
         if (dispatchToWindow(activeRightWindow, mouseX, mouseY, (w, lx, ly, inside) ->
-                inside && w.mouseScrolled(lx, ly, delta)
-        )) return true;
+                inside && w.mouseScrolled(lx, ly, delta))) return true;
 
-        // 左窗口
         if (dispatchToWindow(activeLeftWindow, mouseX, mouseY, (w, lx, ly, inside) ->
-                inside && w.mouseScrolled(lx, ly, delta)
-        )) return true;
+                inside && w.mouseScrolled(lx, ly, delta))) return true;
 
         return super.mouseScrolled(mouseX, mouseY, delta);
     }
 
-    /** 处理 Tab 按钮点击 */
-    private boolean handleTabButtonsClick(double mouseX, double mouseY, int button) {
-        if (button != 0) return false;
-        int left = (this.width - this.imageWidth) / 2;
-        int top = (this.height - this.imageHeight) / 2;
 
-        int b1x = left + TAB_SCREEN_X_1;
-        int b1y = top + TAB_SCREEN_Y;
-        int b2x = left + TAB_SCREEN_X_2;
-        int b2y = top + TAB_SCREEN_Y;
+    // ================= 辅助方法 =================
 
-        if (isHovering(b1x, b1y, TAB_BTN_W, TAB_BTN_H, (int)mouseX, (int)mouseY)) {
-            switchRightWindow(0); // 切换到右1
-            return true;
-        }
-        if (isHovering(b2x, b2y, TAB_BTN_W, TAB_BTN_H, (int)mouseX, (int)mouseY)) {
-            switchRightWindow(1); // 切换到右2
-            return true;
-        }
-        return false;
-    }
-
-    // =========================================
-    // 5. 核心工具方法
-    // =========================================
-
-    /**
-     * 核心分发器：将全局鼠标坐标转换为窗口局部坐标，并执行回调
-     */
     private boolean dispatchToWindow(UiWindow window, double mouseX, double mouseY, WindowEventHandler handler) {
         if (window == null) return false;
-
         int guiLeft = (this.width - this.imageWidth) / 2;
         int guiTop = (this.height - this.imageHeight) / 2;
-
-        // 根据 Side 决定原点
-        int originX = (window.getSide() == WindowSide.LEFT) ? (guiLeft + LEFT_ORIGIN_X) : (guiLeft + RIGHT_ORIGIN_X);
-        int originY = (window.getSide() == WindowSide.LEFT) ? (guiTop + LEFT_ORIGIN_Y) : (guiTop + RIGHT_ORIGIN_Y);
-
-        int localX = (int)mouseX - originX;
-        int localY = (int)mouseY - originY;
-
+        int ox = (window.getSide() == WindowSide.LEFT) ? LEFT_ORIGIN_X : RIGHT_ORIGIN_X;
+        int oy = (window.getSide() == WindowSide.LEFT) ? LEFT_ORIGIN_Y : RIGHT_ORIGIN_Y;
+        int localX = (int)mouseX - (guiLeft + ox);
+        int localY = (int)mouseY - (guiTop + oy);
         boolean inside = (localX >= 0 && localX < window.getWidth() && localY >= 0 && localY < window.getHeight());
-
         return handler.handle(window, localX, localY, inside);
     }
 
@@ -389,50 +348,64 @@ public class SpellScreen extends AbstractContainerScreen<SpellMenu> {
         return mouseX >= x && mouseX < x + w && mouseY >= y && mouseY < y + h;
     }
 
-    // 鼠标栈管理
-    public ItemStack getMouseStack() { return mouseStack; }
-    public void setMouseStack(ItemStack stack) { this.mouseStack = (stack == null) ? ItemStack.EMPTY : stack; }
+    // --- 修改核心存取器 ---
+
+    // 获取当前鼠标上的物品 (直接读 Menu，这是服务端同步过来的真值)
+    public ItemStack getMouseStack() {
+        return this.menu.getCarried();
+    }
+
+    // 设置鼠标物品 (仅用于客户端预测，如拖拽瞬间的视觉反馈)
+    // 真正的修改必须发包给服务器！
+    public void setMouseStack(ItemStack stack) {
+        this.menu.setCarried(stack);
+        //调试debug
+        ISpellContainer container = ISpellContainer.get(this.getMouseStack());
+        SpellData spellData = container.getSpellAtIndex(0);
+        if(spellData != SpellData.EMPTY){
+            System.out.println("客户端：(setMouseStack这里) :法术： " + spellData.getSpell().getSpellName()+"等级:"+spellData.getLevel());
+        }
+    }
+    // 拿走物品 (同上，直接操作 Menu)
     public ItemStack takeMouseStack() {
-        ItemStack old = mouseStack;
-        mouseStack = ItemStack.EMPTY;
+        ItemStack old = this.menu.getCarried();
+        this.menu.setCarried(ItemStack.EMPTY);
         return old;
     }
+    // 供子类调用：归还物品逻辑 (现在是发送网络包)
+    public void returnStackToPlayer(ItemStack stack) {
+        // 1. 只有当鼠标真的有东西时才执行
+        if (stack != null && !stack.isEmpty()) {
+            // 2. 告诉服务器：把鼠标上的东西还回去
+            ModMessage.sendToServer(new PacketReturnCarried());
 
-    @Override
-    public void onClose() {
-        // 生命周期收尾
-        if (activeLeftWindow != null) activeLeftWindow.onHide();
-        if (activeRightWindow != null) activeRightWindow.onHide();
+            // --- B. 客户端视觉预测（这是为了不闪烁） ---
+            // 1. 把物品“假装”塞回客户端背包
+            // 这样下一帧 SpellPage updateFilteredItems 时就能看到它了
+            this.menu.playerInv.add(stack.copy());
+            // 2. 把客户端鼠标清空
+            this.menu.setCarried(ItemStack.EMPTY);
 
-        // 归还鼠标栈
-        returnStackToPlayer(mouseStack);
-        mouseStack = ItemStack.EMPTY;
-
-        // 归还各窗口临时栈
-        for (UiWindow w : leftWindows) returnStackToPlayer(w.collectTempStackForReturn());
-        for (UiWindow w : rightWindows) returnStackToPlayer(w.collectTempStackForReturn());
-
-        super.onClose();
-    }
-
-    private void returnStackToPlayer(ItemStack stack) {
-        if (stack != null && !stack.isEmpty() && this.minecraft != null && this.minecraft.player != null) {
-            if (!this.minecraft.player.getInventory().add(stack)) {
-                this.minecraft.player.drop(stack, false);
-            }
+            System.out.println("debug: 正在归还物品 " + stack.getItem());
+        } else {
+            System.out.println("debug: 物品为空，无需归还");
         }
     }
 
-    // =========================================
-    // 6. 内部类定义：UiWindow 抽象类与枚举
-    // =========================================
+    // 复写 onClose，确保关闭 UI 时归还物品
+    @Override
+    public void onClose() {
+        // 处理当前鼠标上粘着的物品
+        if (!mouseStack.isEmpty()) {
+            returnStackToPlayer(mouseStack);
+            mouseStack = ItemStack.EMPTY;
+        }
+        // 归还子窗口暂存的物品（如果有的话，逻辑同上）
+        // for (UiWindow w : rightWindows) ...
+        // 记得调用 super
+        super.onClose();
+    }
 
-    public enum WindowSide { LEFT, RIGHT }
-
-    /**
-     * 抽象窗口基类
-     * 所有 mouseXXX 和 render 接收的参数均为局部坐标 (0,0 = 窗口左上角)
-     */
     public abstract static class UiWindow {
         protected final SpellScreen host;
         private int windowId = -1;
@@ -442,12 +415,8 @@ public class SpellScreen extends AbstractContainerScreen<SpellMenu> {
 
         protected UiWindow(SpellScreen host) { this.host = host; }
 
-        // 元数据注入（主类调用）
         void _injectMeta(int id, WindowSide side, int w, int h) {
-            this.windowId = id;
-            this.side = side;
-            this.width = w;
-            this.height = h;
+            this.windowId = id; this.side = side; this.width = w; this.height = h;
         }
 
         public int getWindowId() { return windowId; }
@@ -457,35 +426,132 @@ public class SpellScreen extends AbstractContainerScreen<SpellMenu> {
 
         public void onShow() {}
         public void onHide() {}
+        // 关闭UI时调用，把暂存物品吐出来
         public ItemStack collectTempStackForReturn() { return ItemStack.EMPTY; }
-        // 渲染：只接收宽高和局部鼠标
-        public abstract void render(GuiGraphics g, int w, int h, int mouseX, int mouseY, float partialTick);
-        /**
-         * @param g GuiGraphics
-         * @param mouseX 全局鼠标X (用于绘制 Tooltip 跟随鼠标)
-         * @param mouseY 全局鼠标Y
-         * @param localX 局部鼠标X (用于 getEntryAtPosition 碰撞检测)
-         * @param localY 局部鼠标Y
-         */
-        public void renderTooltips(GuiGraphics g, int mouseX, int mouseY, int localX, int localY) {}
 
-        // 【修改】：参数名改为 localX, localY，明确告知实现者这里收到的是相对坐标
+        public abstract void render(GuiGraphics g, int w, int h, int mouseX, int mouseY, float partialTick);
+        public void renderTooltips(GuiGraphics g, int mouseX, int mouseY, int localX, int localY) {}
+        /**
+         * 新增：当主类要求该窗口清除选中状态时调用
+         */
+        public void clearSelection() { }
+        // 事件方法 (参数均为局部坐标)
         public boolean mouseClicked(double localX, double localY, int button) { return false; }
         public boolean mouseReleased(double localX, double localY, int button) { return false; }
         public boolean mouseDragged(double localX, double localY, int button, double dragX, double dragY) { return false; }
         public boolean mouseScrolled(double localX, double localY, double delta) { return false; }
     }
 
-    /**
-     * 绘制跟随鼠标的浮动图标
-     */
+    public enum WindowSide { LEFT, RIGHT }
+
     private void drawFloatingIcon(GuiGraphics guiGraphics, int mouseX, int mouseY, SpellData sd) {
         if (sd == null || sd == SpellData.EMPTY) return;
         AbstractSpell spell = sd.getSpell();
         RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
         guiGraphics.pose().pushPose();
-        guiGraphics.pose().translate(0, 0, 500); // 极高的Z轴，保证在最上层
+        guiGraphics.pose().translate(0, 0, 500);
         guiGraphics.blit(spell.getSpellIconResource(), mouseX - 8, mouseY - 8, 0, 0, 16, 16, 16, 16);
         guiGraphics.pose().popPose();
     }
+    /**
+     * 渲染 Tab 按钮
+     * 逻辑：当前选中的页面对应的按钮是"暗"的，未选中的是"明"的
+     */
+    private void renderTabButtons(GuiGraphics g, int left, int top, int mouseX, int mouseY) {
+        // 获取当前激活的是第几个窗口 (0 或 1)
+        int activeIndex = -1;
+        if (activeRightWindow != null) {
+            activeIndex = rightWindows.indexOf(activeRightWindow);
+        }
+
+        int y = top + TAB_BTN_Y_OFFSET;
+
+        // --- 渲染 Tab 1 ---
+        // 位置：164
+        int x1 = left + TAB_BTN_X_START;
+
+        // U坐标计算：
+        // 如果 Tab1 是激活的(activeIndex==0) -> 显示"暗"(第2个图标, 偏移22)
+        // 如果 Tab1 未激活 -> 显示"明"(第1个图标, 偏移0)
+        int u1 = TAB_TEX_U_START + (activeIndex == 0 ? 22 : 0);
+
+        g.blit(TEXTURE, x1, y, u1, TAB_TEX_V_START, TAB_BTN_W, TAB_BTN_H, 512, 512);
+
+        // --- 渲染 Tab 2 (如果存在) ---
+        if (rightWindows.size() > 1) {
+            // 位置：164 + 22 = 186
+            int x2 = left + TAB_BTN_X_START + TAB_BTN_W;
+
+            // U坐标计算：
+            // 基础偏移是 44 (跳过 Tab1 的两个图标)
+            // 如果 Tab2 是激活的(activeIndex==1) -> 显示"暗"(第4个图标, 基础+22)
+            // 如果 Tab2 未激活 -> 显示"明"(第3个图标, 基础+0)
+            int u2 = TAB_TEX_U_START + 44 + (activeIndex == 1 ? 22 : 0);
+
+            g.blit(TEXTURE, x2, y, u2, TAB_TEX_V_START, TAB_BTN_W, TAB_BTN_H, 512, 512);
+        }
+    }
+    /**
+     * 处理 Tab 点击
+     * 逻辑：只有点击"明"(未选中)的按钮才生效，点击"暗"(已选中)的不做反应
+     */
+    private boolean handleTabButtonsClick(double mouseX, double mouseY, int button) {
+        if (button != 0) return false; // 只响应左键
+
+        int left = (this.width - this.imageWidth) / 2;
+        int top = (this.height - this.imageHeight) / 2;
+        int y = top + TAB_BTN_Y_OFFSET;
+
+        // 获取当前激活索引，用于判断是否可以点击
+        int activeIndex = -1;
+        if (activeRightWindow != null) {
+            activeIndex = rightWindows.indexOf(activeRightWindow);
+        }
+
+        // --- 检查 Tab 1 ---
+        int x1 = left + TAB_BTN_X_START;
+        if (mouseX >= x1 && mouseX < x1 + TAB_BTN_W && mouseY >= y && mouseY < y + TAB_BTN_H) {
+            // 只有当 Tab 1 不是当前页面时，才允许切换
+            if (activeIndex != 0) {
+                switchRightWindow(0);
+                // 可以在这里播放点击音效
+                // Minecraft.getInstance().getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, 1.0F));
+                return true;
+            }
+        }
+
+        // --- 检查 Tab 2 ---
+        if (rightWindows.size() > 1) {
+            int x2 = left + TAB_BTN_X_START + TAB_BTN_W;
+            if (mouseX >= x2 && mouseX < x2 + TAB_BTN_W && mouseY >= y && mouseY < y + TAB_BTN_H) {
+                // 只有当 Tab 2 不是当前页面时，才允许切换
+                if (activeIndex != 1) {
+                    switchRightWindow(1);
+                    // Minecraft.getInstance().getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, 1.0F));
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+    // ================= 全局选中管理 (新增核心) =================
+
+    /**
+     * 子窗口调用此方法声明它获取了选中焦点。
+     * 主类会负责通知其他窗口清除它们的选中状态。
+     *
+     * @param source 触发选中的窗口
+     */
+    public void claimSelectionFocus(UiWindow source) {
+        // 如果左侧窗口不是触发源，且处于激活状态，让它清除选中
+        if (activeLeftWindow != null && activeLeftWindow != source) {
+            activeLeftWindow.clearSelection();
+        }
+        // 如果右侧窗口不是触发源，且处于激活状态，让它清除选中
+        if (activeRightWindow != null && activeRightWindow != source) {
+            activeRightWindow.clearSelection();
+        }
+    }
+
 }
