@@ -1,6 +1,6 @@
-package io.isb.modifier.api.modifier.magic;
+package io.isb.modifier.api.magic;
 
-import io.isb.modifier.api.modifier.AbstractModifier;
+import io.isb.modifier.api.AbstractModifier;
 import io.redspace.ironsspellbooks.api.events.SpellOnCastEvent;
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;

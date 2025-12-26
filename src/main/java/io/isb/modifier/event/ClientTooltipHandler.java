@@ -1,7 +1,7 @@
 package io.isb.modifier.event;
 
 import io.isb.modifier.MagicModifier;
-import io.isb.modifier.api.modifier.AbstractModifier;
+import io.isb.modifier.api.AbstractModifier;
 import io.isb.modifier.api.util.RuneContainerHelper;
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;

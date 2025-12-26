@@ -1,7 +1,7 @@
 package io.isb.modifier.event;
 
 import io.isb.modifier.MagicModifier;
-import io.isb.modifier.api.modifier.AbstractModifier;
+import io.isb.modifier.api.AbstractModifier;
 import io.isb.modifier.api.util.RuneContainerHelper;
 import io.redspace.ironsspellbooks.api.events.SpellOnCastEvent;
 import io.redspace.ironsspellbooks.api.magic.MagicData;

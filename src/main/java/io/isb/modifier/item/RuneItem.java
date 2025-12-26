@@ -1,6 +1,6 @@
 package io.isb.modifier.item;
 
-import io.isb.modifier.api.modifier.AbstractModifier;
+import io.isb.modifier.api.AbstractModifier;
 import io.isb.modifier.init.ModifierRegistry;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;

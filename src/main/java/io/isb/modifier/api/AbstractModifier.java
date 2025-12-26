@@ -1,4 +1,4 @@
-package io.isb.modifier.api.modifier;
+package io.isb.modifier.api;
 
 import io.isb.modifier.init.ModifierRegistry;
 import net.minecraft.resources.ResourceLocation;

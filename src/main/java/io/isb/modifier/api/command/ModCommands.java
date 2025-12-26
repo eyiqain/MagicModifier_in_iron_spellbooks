@@ -1,4 +1,4 @@
-package io.isb.modifier.api.modifier.command;
+package io.isb.modifier.api.command;
 
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
@@ -6,7 +6,7 @@ import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
 import io.isb.modifier.MagicModifier;
-import io.isb.modifier.api.modifier.AbstractModifier;
+import io.isb.modifier.api.AbstractModifier;
 import io.isb.modifier.api.util.RuneContainerHelper;
 import io.isb.modifier.init.ModifierRegistry;
 import net.minecraft.commands.CommandSourceStack;

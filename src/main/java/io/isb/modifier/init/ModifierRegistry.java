@@ -1,8 +1,8 @@
 package io.isb.modifier.init;
 
 import io.isb.modifier.MagicModifier;
-import io.isb.modifier.api.modifier.AbstractModifier;
-import io.isb.modifier.api.modifier.magic.TestModifier;
+import io.isb.modifier.api.AbstractModifier;
+import io.isb.modifier.api.magic.TestModifier;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.registries.DeferredRegister;
