@@ -4,11 +4,9 @@ import com.mojang.blaze3d.systems.RenderSystem;
 import io.isb.modifier.MagicModifier;
 import io.isb.modifier.gui.page.FunctionPage;
 import io.isb.modifier.gui.page.InstructionPage;
-import io.isb.modifier.gui.page.ModifyPage;
 import io.isb.modifier.gui.page.SpellPage;
 import io.isb.modifier.net.ModMessage;
-import io.isb.modifier.net.ui.PacketManageSynth;
-import io.isb.modifier.net.ui.PacketReturnCarried;
+import io.isb.modifier.net.ui.PacketUnifiedSwap;
 import io.redspace.ironsspellbooks.api.spells.AbstractSpell;
 import io.redspace.ironsspellbooks.api.spells.ISpellContainer;
 import io.redspace.ironsspellbooks.api.spells.SpellData;
@@ -394,10 +392,12 @@ public class SpellScreen extends AbstractContainerScreen<SpellMenu> {
         // 1. 只有当鼠标真的有东西时才执行
         if (stack != null && !stack.isEmpty()) {
             // 2. 告诉服务器：把鼠标上的东西还回去
-            ModMessage.sendToServer(new PacketReturnCarried());
-
+            ModMessage.sendToServer(new PacketUnifiedSwap(
+                    PacketUnifiedSwap.TYPE_MOUSE, 0,      // From: 鼠标
+                    PacketUnifiedSwap.TYPE_PLAYER, -1     // To: 玩家背包 (自动寻位)
+            ));
             // --- B. 客户端视觉预测（这是为了不闪烁） ---
-            // 1. 把物品“假装”塞回客户端背包
+            // 1.因为服务端会真的清空，只是可能存在延迟
             // 这样下一帧 SpellPage updateFilteredItems 时就能看到它了
             this.menu.playerInv.add(stack.copy());
             // 2. 把客户端鼠标清空
@@ -425,7 +425,10 @@ public class SpellScreen extends AbstractContainerScreen<SpellMenu> {
                 int idx = dragContext.sourceIndex;
                 // 只允许回输入槽（0/1），避免把卷轴塞回输出槽 2
                 if (idx >= 0 && idx < 2) {
-                    ModMessage.sendToServer(new io.isb.modifier.net.ui.PacketManageSynth(0, idx));
+                    ModMessage.sendToServer(new PacketUnifiedSwap(
+                            PacketUnifiedSwap.TYPE_MOUSE, 0,
+                            PacketUnifiedSwap.TYPE_SYNTH, idx
+                    ));
                     // 客户端视觉预测：清空鼠标，等待 PacketSyncSynth 同步槽位
                     this.menu.setCarried(ItemStack.EMPTY);
                     handled = true;

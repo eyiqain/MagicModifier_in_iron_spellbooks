@@ -283,7 +283,10 @@ public class FunctionPage extends SpellScreen.UiWindow {
 
             ItemStack toPlace = held.split(1);//鼠标槽客户端清空
             synthStacks[slotIdx] = toPlace;//合成槽客户端数据
-            ModMessage.sendToServer(new PacketManageSynth(0, slotIdx));
+            ModMessage.sendToServer(new PacketUnifiedSwap(
+                    PacketUnifiedSwap.TYPE_MOUSE, 0,
+                    PacketUnifiedSwap.TYPE_SYNTH, slotIdx
+            ));
             return true;
         }
         return false;
@@ -295,7 +298,10 @@ public class FunctionPage extends SpellScreen.UiWindow {
             ItemStack stack = synthStacks[slotIdx];
             host.setMouseStack(stack);
             synthStacks[slotIdx] = ItemStack.EMPTY;
-            ModMessage.sendToServer(new PacketManageSynth(1, slotIdx));
+            ModMessage.sendToServer(new PacketUnifiedSwap(
+                    PacketUnifiedSwap.TYPE_SYNTH, slotIdx,
+                    PacketUnifiedSwap.TYPE_MOUSE, 0
+            ));
             if (slotIdx == 2) isCraftResultPending = false;
         }
     }
@@ -304,7 +310,11 @@ public class FunctionPage extends SpellScreen.UiWindow {
             ItemStack stack = synthStacks[slotIdx];
             host.setMouseStack(stack);
             synthStacks[slotIdx] = ItemStack.EMPTY;
-            ModMessage.sendToServer(new PacketManageSynth(1, slotIdx));
+            ModMessage.sendToServer(new PacketUnifiedSwap(
+                    PacketUnifiedSwap.TYPE_SYNTH, slotIdx,
+                    PacketUnifiedSwap.TYPE_MOUSE, 0
+
+            ));
             if (slotIdx == 2) isCraftResultPending = false;
         }
     }
@@ -326,9 +336,17 @@ public class FunctionPage extends SpellScreen.UiWindow {
         if (fromSlot == targetSlotIndex) return true;
 
         if (held == null || held.isEmpty() || !(held.getItem() instanceof Scroll)) return false;
+        //分两部，因为现在的书籍在鼠标上，源头空的
+        ModMessage.sendToServer(new PacketUnifiedSwap(
+                PacketUnifiedSwap.TYPE_BOOK, fromSlot,
+                PacketUnifiedSwap.TYPE_BOOK, targetSlotIndex
 
-        // ✅ 你需要新增这个包：服务端把书里 fromSlot 与 targetSlotIndex 互换
-        ModMessage.sendToServer(new PacketSwapBookSlots(fromSlot, targetSlotIndex));
+        ));
+        ModMessage.sendToServer(new PacketUnifiedSwap(
+                PacketUnifiedSwap.TYPE_MOUSE, 0,
+                PacketUnifiedSwap.TYPE_BOOK, targetSlotIndex
+        ));
+
 
         // ✅ 客户端视觉：认为已经放回书里了（不想预测也行，但你目前 handleBookInsert 会 shrink）
         held.shrink(1);
@@ -375,8 +393,11 @@ public class FunctionPage extends SpellScreen.UiWindow {
         // 视觉消耗
         held.shrink(1);
         if (held.isEmpty()) host.setMouseStack(ItemStack.EMPTY);
-        // 发送包
-        ModMessage.sendToServer(new PacketInscribeSpell(targetSlotIndex));
+        // 发送写入
+        ModMessage.sendToServer(new PacketUnifiedSwap(
+                PacketUnifiedSwap.TYPE_MOUSE, 0,      // From: 鼠标
+                PacketUnifiedSwap.TYPE_BOOK, targetSlotIndex     // To: 玩家背包 (自动寻位)
+        ));
         return true;
     }
 
@@ -389,11 +410,14 @@ public class FunctionPage extends SpellScreen.UiWindow {
         SpellData slotData = bookContainer.getSpellAtIndex(slotIdx);
 
         if (slotData != SpellData.EMPTY) {
-            ModMessage.sendToServer(new PacketExtractSpell(slotIdx));//该包把卷轴放鼠标上（客户端/服务端）
+            ModMessage.sendToServer(new PacketUnifiedSwap(
+                    PacketUnifiedSwap.TYPE_BOOK, slotIdx ,    // To: 玩家背包 (自动寻位)
+                    PacketUnifiedSwap.TYPE_MOUSE, 0     // From: 鼠标
+            ));
         }
     }
     //右键点击
-    private void handleBookExtract_Click(int slotIdx) {//必须手动改玩家客户端背包，服务端靠发包
+    private void handleBookExtract_Click(int slotIdx) {//服务端靠发包
         ItemStack bookStack = Utils.getPlayerSpellbookStack(Objects.requireNonNull(this.host.getMinecraft().player));
         if (bookStack == null) return;
 
@@ -401,14 +425,14 @@ public class FunctionPage extends SpellScreen.UiWindow {
         SpellData slotData = bookContainer.getSpellAtIndex(slotIdx);
 
         if (slotData != SpellData.EMPTY) {
-            // 这里并没有复杂的本地预测（因为生成 Scroll 需要法术数据），
-            // 直接发包让服务器处理，服务器会把物品放到鼠标上并同步回来。
-            // 只要网络不卡，体感是瞬间的。
             //调试debug
             System.out.println("法术书取出 : 法术： " + slotData.getSpell().getSpellName()+"等级:"+slotData.getLevel());
             //this.host.setMouseStack(bookStack);
             //ModMessage.sendToServer(new PacketExtractSpell(slotIdx));//该包把卷轴放鼠标上（客户端/服务端）
-            ModMessage.sendToServer(new PacketExtractToInv(slotIdx));//直接退回背包（服务端）
+            ModMessage.sendToServer(new PacketUnifiedSwap(
+                    PacketUnifiedSwap.TYPE_BOOK, slotIdx ,
+                    PacketUnifiedSwap.TYPE_PLAYER, -1
+            ));
             ItemStack tempStack = new ItemStack(ItemRegistry.SCROLL.get());
             // 🔥 关键：不要用 ISpellContainer.get()，直接 new 一个正确初始化的 SpellContainer
             SpellContainer scrollContainer = new SpellContainer(1, false, false);
@@ -555,7 +579,7 @@ public class FunctionPage extends SpellScreen.UiWindow {
 
     private void tryCraft() {//发包请求服务齐全合成，服务器合成成功会自动同步客户端数据
         if (!synthStacks[0].isEmpty() && !synthStacks[1].isEmpty() && synthStacks[2].isEmpty()) {
-            ModMessage.sendToServer(new PacketManageSynth(2, -1));
+            ModMessage.sendToServer(new PacketManageSynth());
         }
     }
 

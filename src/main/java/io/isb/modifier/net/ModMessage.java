@@ -47,49 +47,21 @@ public class ModMessage {
                 .decoder(PacketUpdateConfig::new)    // 对应 PacketUpdateConfig 里的 public PacketUpdateConfig(buf)
                 .consumerMainThread(PacketUpdateConfig::handle)
                 .add();
-        // === 新 UI 交互包 (全链路同步) ===
-        NETWORK.messageBuilder(PacketPickupSpell.class, id(), NetworkDirection.PLAY_TO_SERVER)
-                .encoder(PacketPickupSpell::encode)
-                .decoder(PacketPickupSpell::decode)
-                .consumerMainThread(PacketPickupSpell::handle)
-                .add();
-        NETWORK.messageBuilder(PacketReturnCarried.class, id(), NetworkDirection.PLAY_TO_SERVER)
-                .encoder(PacketReturnCarried::encode)
-                .decoder(PacketReturnCarried::decode)
-                .consumerMainThread(PacketReturnCarried::handle)
-                .add();
-        // === 刻印/合成相关包 ===
-        NETWORK.messageBuilder(PacketInscribeSpell.class, id(), NetworkDirection.PLAY_TO_SERVER)
-                .encoder(PacketInscribeSpell::encode)
-                .decoder(PacketInscribeSpell::decode)
-                .consumerMainThread(PacketInscribeSpell::handle)
-                .add();
         //=======合成管理=======
         NETWORK.messageBuilder(PacketManageSynth.class, id(), NetworkDirection.PLAY_TO_SERVER)
                 .encoder(PacketManageSynth::encode)
                 .decoder(PacketManageSynth::decode)
                 .consumerMainThread(PacketManageSynth::handle)
                 .add();
-        NETWORK.messageBuilder(PacketExtractSpell.class, id(), NetworkDirection.PLAY_TO_SERVER)
-                .encoder(PacketExtractSpell::encode)
-                .decoder(PacketExtractSpell::decode)
-                .consumerMainThread(PacketExtractSpell::handle)
-                .add();
         NETWORK.messageBuilder(PacketSyncSynth.class, id(), NetworkDirection.PLAY_TO_CLIENT)
                 .encoder(PacketSyncSynth::encode)
                 .decoder(PacketSyncSynth::decode)
                 .consumerMainThread(PacketSyncSynth::handle)
                 .add();
-        // === 新增：直接提取到背包的包 ===
-        NETWORK.messageBuilder(PacketExtractToInv.class, id(), NetworkDirection.PLAY_TO_SERVER)
-                .encoder(PacketExtractToInv::encode)
-                .decoder(PacketExtractToInv::decode)
-                .consumerMainThread(PacketExtractToInv::handle)
-                .add();
-        NETWORK.messageBuilder(PacketSwapBookSlots.class, id(), NetworkDirection.PLAY_TO_SERVER)
-                .encoder(PacketSwapBookSlots::encode)
-                .decoder(PacketSwapBookSlots::decode)
-                .consumerMainThread(PacketSwapBookSlots::handle)
+        NETWORK.messageBuilder(PacketUnifiedSwap.class, id(), NetworkDirection.PLAY_TO_SERVER)
+                .encoder(PacketUnifiedSwap::encode)
+                .decoder(PacketUnifiedSwap::decode)
+                .consumerMainThread(PacketUnifiedSwap::handle)
                 .add();
         NETWORK.messageBuilder(PacketReturnToSource.class, id(), NetworkDirection.PLAY_TO_SERVER)
                 .encoder(PacketReturnToSource::encode)

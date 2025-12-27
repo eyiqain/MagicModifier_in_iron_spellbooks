@@ -3,7 +3,7 @@ package io.isb.modifier.gui.page;
 import com.mojang.blaze3d.systems.RenderSystem;
 import io.isb.modifier.gui.SpellScreen;
 import io.isb.modifier.net.ModMessage;
-import io.isb.modifier.net.ui.PacketPickupSpell;
+import io.isb.modifier.net.ui.PacketUnifiedSwap;
 import io.redspace.ironsspellbooks.api.spells.AbstractSpell;
 import io.redspace.ironsspellbooks.api.spells.ISpellContainer;
 import io.redspace.ironsspellbooks.api.spells.SchoolType;
@@ -86,6 +86,18 @@ public class SpellPage extends  SpellScreen.UiWindow{
     @Override
     public void clearSelection() {
         this.selectedEntry = null; // 清空本地选中
+    }
+    // === 对外暴露当前选中的法术条目（给右侧详情窗口用）===
+    public AbstractSpell getSelectedSpell() {
+        return selectedEntry == null ? null : selectedEntry.spell;
+    }
+
+    public int getSelectedSpellLevel() {
+        return selectedEntry == null ? 0 : selectedEntry.level;
+    }
+
+    public boolean hasSelectedSpell() {
+        return selectedEntry != null;
     }
     private void updateFilteredItems() {
         groupedItemIndices.clear();//列表，为了实时更新列表会经常修改
@@ -443,7 +455,10 @@ public class SpellPage extends  SpellScreen.UiWindow{
 
             // --- 2. 告诉服务端同步状态 ---
             // 发送包：告诉服务器“我实际执行了这个操作，请校验并同步”
-            ModMessage.sendToServer(new PacketPickupSpell(slot));
+            ModMessage.sendToServer(new PacketUnifiedSwap(
+                    PacketUnifiedSwap.TYPE_PLAYER, slot ,    //  玩家背包
+                    PacketUnifiedSwap.TYPE_MOUSE, 0     //  鼠标
+            ));
 
             // --- 3. 强制触发一次列表更新 ---
             // 虽然 render 会每帧调用，但手动重置一下状态是个好习惯，确保 selectedEntry 状态正确

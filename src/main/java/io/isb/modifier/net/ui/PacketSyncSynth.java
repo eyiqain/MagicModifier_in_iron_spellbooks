@@ -29,12 +29,22 @@ public class PacketSyncSynth {
 
     public static void handle(PacketSyncSynth msg, Supplier<NetworkEvent.Context> ctx) {
         ctx.get().enqueueWork(() -> {
-            // 客户端逻辑
+            // 只在客户端执行
             if (Minecraft.getInstance().screen instanceof SpellScreen screen) {
-                // 我们需要一个方法能在 SpellScreen 里找到 FunctionPage
-                // 这里假设 FunctionPage 是 activeRightWindow，或者你可以遍历查找
-                if (screen.getActiveRightWindow() instanceof FunctionPage page) {
 
+                // 1. 【核心】更新客户端 Menu 中的数据源
+                // 这是“真值”。FunctionPage 渲染时应该从这里读取数据。
+                // 这样即使你现在处于 InstructionPage，后台数据也会被更新。
+                if (screen.getMenu() != null) {
+                    // 确保索引不越界 (0, 1, 2)
+                    if (msg.slotIndex >= 0 && msg.slotIndex < screen.getMenu().synthContainer.getContainerSize()) {
+                        screen.getMenu().synthContainer.setItem(msg.slotIndex, msg.itemStack);
+                    }
+                }
+
+                // 2. 【视觉】如果当前正好是 FunctionPage，通知它立即刷新
+                // 这一步是为了触发可能的动画、粒子效果或者缓存更新
+                if (screen.getActiveRightWindow() instanceof FunctionPage page) {
                     page.updateSynthSlot(msg.slotIndex, msg.itemStack);
                 }
             }
