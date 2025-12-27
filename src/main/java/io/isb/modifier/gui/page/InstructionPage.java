@@ -19,25 +19,26 @@ import java.util.List;
 import static io.isb.modifier.gui.SpellScreen.TEXTURE;
 
 /**
- * 右侧详情页窗口（local 坐标绘制）
- * - 内容来自左侧 SpellPage 当前选中条目
- * - 只在自身为 activeRightWindow 时才渲染内容
- * - “描述(非 tooltip)”直接画在窗口里
+ * 右侧详情页窗口
+ * 修复了类型转换错误：String vs Component
  */
 public class InstructionPage extends SpellScreen.UiWindow {
 
-    // 背景区域：和 InstructionPage 一样
     private static final int BG_U = 147;
     private static final int BG_V = 2;
 
-    // 内容布局（全部 local 坐标）
-    private static final int PADDING = 6;
-    private static final int CONTENT_W = 118 - PADDING * 2; // 右侧窗口宽 118（由 SpellScreen 注入）
     private static final int CONTENT_TOP = 10;
 
-    // 固定显示范围的左和右 X 坐标
-    private static final int TEXT_LEFT = 155;
-    private static final int TEXT_RIGHT = 258;
+    // === 核心配置：文本显示范围 ===
+    private static final int TEXT_LEFT = 17;
+    private static final int TEXT_RIGHT = 121;
+    private static final int TEXT_W = TEXT_RIGHT - TEXT_LEFT;
+
+    // === 样式配置 ===
+    // 纯黑色
+    private static final int COLOR_TEXT = 0xFF000000;
+    // 黑色阴影（设为 false 更清晰，设为 true 则是你要的阴影）
+    private static final boolean USE_SHADOW = true;
 
     public InstructionPage(SpellScreen host) {
         super(host);
@@ -45,16 +46,16 @@ public class InstructionPage extends SpellScreen.UiWindow {
 
     @Override
     public void render(GuiGraphics g, int w, int h, int mouseX, int mouseY, float partialTick) {
-        // 0) 画背景（local 坐标：窗口内 (0,0)）
+        // 0) 画背景
         RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
         g.blit(TEXTURE, 0, 0, BG_U, BG_V, w, h, 512, 512);
 
-        // 1) 必须判断窗口是否被激活（你要求的）
+        // 1) 只有被激活时才渲染
         if (this.host.getActiveRightWindow() != this) {
             return;
         }
 
-        // 2) 从左侧窗口读取选中的法术
+        // 2) 获取选中的法术
         AbstractSpell spell = null;
         int level = 0;
 
@@ -63,106 +64,98 @@ public class InstructionPage extends SpellScreen.UiWindow {
             level = sp.getSelectedSpellLevel();
         }
 
-        // 3) 没选中 -> 提示
+        Font font = this.host.getMinecraft().font;
+
+        // 3) 未选中法术时的提示
         if (spell == null || level <= 0) {
-            drawCentered(g, this.host.getMinecraft().font,
-                    Component.literal("未选择法术").withStyle(ChatFormatting.UNDERLINE),
-                    w, CONTENT_TOP, 0xFFFFFFFF);
+            int y = CONTENT_TOP;
+            Component t = Component.literal("未选择法术").withStyle(ChatFormatting.UNDERLINE);
+            y = drawComponentWrapped(g, font, t, y) + 4;
 
-            g.drawWordWrap(this.host.getMinecraft().font,
-                    Component.literal("请在左侧列表点击一个法术。"),
-                    PADDING, CONTENT_TOP + 18, CONTENT_W, 0xFFE8E0D8);
-
+            Component tip = Component.literal("请在左侧列表点击一个法术。");
+            drawComponentWrapped(g, font, tip, y);
             return;
         }
 
-        // 4) 选中了 -> 画详情（仍然全部 local 坐标）
+        // 4) 选中后的详情绘制
         var player = Minecraft.getInstance().player;
-        Font font = this.host.getMinecraft().font;
 
-        Style base = Style.EMPTY.withColor(0xE8E0D8);
-        Style colorMana = Style.EMPTY.withColor(0x4FA0FF);
-        Style colorCooldown = Style.EMPTY.withColor(0x55CC77);
+        // 定义一个纯黑的基础样式，覆盖原有的颜色
+        Style blackStyle = Style.EMPTY.withColor(0x000000);
 
         int y = CONTENT_TOP;
 
-        // 标题（居中 + 下划线）
-        Component title = spell.getDisplayName(player).copy()
-                .withStyle(ChatFormatting.UNDERLINE);
-        y = drawCenteredWrapped(g, font, title, w, y, CONTENT_W, 0xFFFFFFFF) + 4;
+        // --- 标题 ---
+        Component title = spell.getDisplayName(player).copy().withStyle(ChatFormatting.UNDERLINE).withStyle(blackStyle);
+        y = drawComponentWrapped(g, font, title, y) + 4;
 
-        // School（居中）
-        Component school = spell.getSchoolType().getDisplayName();
-        y = drawCenteredWrapped(g, font, school, w, y, CONTENT_W, 0xFFFFFFFF);
+        // --- 学派 (School) ---
+        Component school = spell.getSchoolType().getDisplayName().copy().withStyle(blackStyle);
+        y = drawComponentWrapped(g, font, school, y);
 
-        // Level（居中）
-        Component lvl = Component.translatable("ui.irons_spellbooks.level", level).withStyle(base);
-        y = drawCenteredWrapped(g, font, lvl, w, y, CONTENT_W, 0xFFFFFFFF) + 6;
+        // --- 等级 (Level) ---
+        Component lvl = Component.translatable("ui.irons_spellbooks.level", level).withStyle(blackStyle);
+        y = drawComponentWrapped(g, font, lvl, y) + 6;
 
-        // Mana
+        // --- 蓝耗 (Mana) ---
         int manaCost = spell.getManaCost(level);
-        Component manaLine = Component.translatable("ui.irons_spellbooks.mana_cost",
-                Component.literal(String.valueOf(manaCost)).withStyle(colorMana)
-        ).withStyle(base);
-        y += drawWrapped(g, font, manaLine, PADDING, y, CONTENT_W, 0xFFFFFFFF);
+        Component manaLine = Component.translatable("ui.irons_spellbooks.mana_cost", manaCost).withStyle(blackStyle);
+        y = drawComponentWrapped(g, font, manaLine, y);
 
-        // Cast Time
-        Component castLine = TooltipsUtils.getCastTimeComponent(
-                spell.getCastType(),
-                Utils.timeFromTicks(spell.getEffectiveCastTime(level, null), 1)
-        ).copy().withStyle(base);
-        y += drawWrapped(g, font, castLine, PADDING, y, CONTENT_W, 0xFFFFFFFF);
+        // --- 施法时间 (Cast Time) ---
+        // 修复点：timeFromTicks 返回 String，而不是 Component
+        String castTimeStr = Utils.timeFromTicks(spell.getEffectiveCastTime(level, null), 1);
 
-        // Cooldown
-        Component cdLine = Component.translatable("ui.irons_spellbooks.cooldown",
-                Component.literal(Utils.timeFromTicks(spell.getSpellCooldown(), 1)).withStyle(colorCooldown)
-        ).withStyle(base);
-        y += drawWrapped(g, font, cdLine, PADDING, y, CONTENT_W, 0xFFFFFFFF);
+        // TooltipsUtils.getCastTimeComponent 接受 String
+        Component castLine = TooltipsUtils.getCastTimeComponent(spell.getCastType(), castTimeStr).copy().withStyle(blackStyle);
+        y = drawComponentWrapped(g, font, castLine, y);
 
-        // Unique Info
+        // --- 冷却 (Cooldown) ---
+        // 修复点：同上，这里返回的是 String
+        String cdStr = Utils.timeFromTicks(spell.getSpellCooldown(), 1);
+
+        // Component.translatable 第二个参数可以是 String
+        Component cdLine = Component.translatable("ui.irons_spellbooks.cooldown", cdStr).withStyle(blackStyle);
+        y = drawComponentWrapped(g, font, cdLine, y);
+
+        // --- 特殊属性 (Unique Info) ---
         List<MutableComponent> uniques = spell.getUniqueInfo(level, null);
         for (MutableComponent c : uniques) {
             if (y > h - 12) break;
-            y += drawWrapped(g, font, c.copy().withStyle(base), PADDING, y, CONTENT_W, 0xFFFFFFFF);
+            y = drawComponentWrapped(g, font, c.withStyle(blackStyle), y);
         }
 
-        // 描述（非 tooltip）——把 tooltip 的描述内容当正文画出来
+        // --- 描述 (Description) ---
         if (y <= h - 24) {
             y += 6;
-            Component descTitle = Component.literal("描述").withStyle(ChatFormatting.UNDERLINE).withStyle(base);
-            y += drawWrapped(g, font, descTitle, PADDING, y, CONTENT_W, 0xFFFFFFFF);
+            Component descTitle = Component.literal("描述").withStyle(ChatFormatting.UNDERLINE).withStyle(blackStyle);
+            y = drawComponentWrapped(g, font, descTitle, y);
 
+            // 获取描述行
             List<FormattedCharSequence> descLines = TooltipsUtils.createSpellDescriptionTooltip(spell, font);
+
             for (FormattedCharSequence line : descLines) {
                 if (y > h - 10) break;
-                g.drawString(font, line, PADDING, y, 0xFFE8E0D8, false);
+                // 直接绘制“死”文本，不进行 split（因为已经是渲染序列了）
+                g.drawString(font, line, TEXT_LEFT, y, COLOR_TEXT, USE_SHADOW);
                 y += font.lineHeight;
             }
         }
     }
 
-    // ===================== local 坐标辅助绘制 =====================
+    /**
+     * 辅助方法：将 Component 限制在 TEXT_W 宽度内绘制
+     * 超出自动换行
+     */
+    private int drawComponentWrapped(GuiGraphics g, Font font, Component text, int y) {
+        // 使用 font.split(Component, width) 将文本切分成多行
+        List<FormattedCharSequence> lines = font.split(text, TEXT_W);
 
-    private void drawCentered(GuiGraphics g, Font font, Component text, int winW, int y, int color) {
-        int tw = font.width(text);
-        int x = (winW - tw) / 2;
-        g.drawString(font, text, x, y, color, false);
-    }
-
-    private int drawCenteredWrapped(GuiGraphics g, Font font, Component text, int winW, int y, int wrapW, int color) {
-        List<FormattedCharSequence> lines = font.split(text, wrapW);
         for (FormattedCharSequence line : lines) {
-            int tw = font.width(line);
-            int x = (winW - tw) / 2;
-            g.drawString(font, line, x, y, color, false);
+            g.drawString(font, line, TEXT_LEFT, y, COLOR_TEXT, USE_SHADOW);
             y += font.lineHeight;
         }
         return y;
-    }
-
-    private int drawWrapped(GuiGraphics g, Font font, Component text, int x, int y, int wrapW, int color) {
-        g.drawWordWrap(font, text, x, y, wrapW, color);
-        return font.wordWrapHeight(text, wrapW);
     }
 
     @Override
