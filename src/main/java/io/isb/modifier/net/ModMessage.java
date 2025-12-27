@@ -86,6 +86,16 @@ public class ModMessage {
                 .decoder(PacketExtractToInv::decode)
                 .consumerMainThread(PacketExtractToInv::handle)
                 .add();
+        NETWORK.messageBuilder(PacketSwapBookSlots.class, id(), NetworkDirection.PLAY_TO_SERVER)
+                .encoder(PacketSwapBookSlots::encode)
+                .decoder(PacketSwapBookSlots::decode)
+                .consumerMainThread(PacketSwapBookSlots::handle)
+                .add();
+        NETWORK.messageBuilder(PacketReturnToSource.class, id(), NetworkDirection.PLAY_TO_SERVER)
+                .encoder(PacketReturnToSource::encode)
+                .decoder(PacketReturnToSource::decode)
+                .consumerMainThread(PacketReturnToSource::handle)
+                .add();
 
 
 

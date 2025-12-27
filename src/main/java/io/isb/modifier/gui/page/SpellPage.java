@@ -412,7 +412,8 @@ public class SpellPage extends  SpellScreen.UiWindow{
     public boolean mouseReleased(double localX, double localY, int button) {
         // 1. 结束拖拽状态
         this.isDraggingItem = false;
-
+        //将物品归还背包
+        this.host.returnStackToPlayer(this.host.getMouseStack());
         return false;
     }
 

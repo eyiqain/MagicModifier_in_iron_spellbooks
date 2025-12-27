@@ -4,7 +4,9 @@ import io.isb.modifier.gui.SpellMenu;
 import io.isb.modifier.net.ModMessage;
 import io.redspace.ironsspellbooks.api.spells.ISpellContainer;
 import io.redspace.ironsspellbooks.api.spells.SpellData;
+import io.redspace.ironsspellbooks.capabilities.magic.SpellContainer;
 import io.redspace.ironsspellbooks.item.Scroll;
+import io.redspace.ironsspellbooks.registries.ItemRegistry;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.SimpleContainer;
@@ -37,7 +39,7 @@ public class PacketManageSynth {
             ServerPlayer player = ctx.get().getSender();
             if (player != null && player.containerMenu instanceof SpellMenu menu) {
                 SimpleContainer synth = menu.synthContainer;
-                ItemStack carried = player.containerMenu.getCarried();
+                ItemStack carried = player.containerMenu.getCarried();//服务端的
 
                 switch (msg.actionType) {
                     case 0: // === 放入 (Mouse -> Slot) ===
@@ -46,10 +48,9 @@ public class PacketManageSynth {
                             if (msg.slotIndex < 2 && !(carried.getItem() instanceof Scroll)) break;
 
                             // 执行移动
-                            synth.setItem(msg.slotIndex, carried.split(1)); // 拿走一个
-                            player.containerMenu.setCarried(carried); // 更新鼠标
+                            synth.setItem(msg.slotIndex, carried.split(1)); // 鼠标拿到合成槽
                             // 🔥🔥🔥 必须添加：同步这个槽位（变空了）给客户端 🔥🔥🔥
-                            ModMessage.sendToPlayer(new PacketSyncSynth(msg.slotIndex, ItemStack.EMPTY), player);
+                            //ModMessage.sendToPlayer(new PacketSyncSynth(msg.slotIndex, ItemStack.EMPTY), player);
                         }
                         break;
 
@@ -59,7 +60,7 @@ public class PacketManageSynth {
                             player.containerMenu.setCarried(itemInSlot); // 放到鼠标
                             synth.setItem(msg.slotIndex, ItemStack.EMPTY); // 清空槽位
                             // 🔥🔥🔥 必须添加：同步这个槽位（变空了）给客户端 🔥🔥🔥
-                            ModMessage.sendToPlayer(new PacketSyncSynth(msg.slotIndex, ItemStack.EMPTY), player);
+                            //ModMessage.sendToPlayer(new PacketSyncSynth(msg.slotIndex, ItemStack.EMPTY), player);
                         }
                         break;
 
@@ -83,11 +84,10 @@ public class PacketManageSynth {
 
                                 // 生成产物 (示例：等级+1)
                                 int newLevel = d1.getLevel() + 1;
-                                ItemStack resultStack = new ItemStack(io.redspace.ironsspellbooks.registries.ItemRegistry.SCROLL.get());
-                                ISpellContainer resultContainer = ISpellContainer.get(resultStack);
-                                resultContainer.addSpellAtIndex(d1.getSpell(), newLevel, 0, true, null);
-                                resultContainer.save(resultStack);
-
+                                ItemStack resultStack = new ItemStack(ItemRegistry.SCROLL.get());
+                                SpellContainer resultContainer = new SpellContainer(1, false, false);
+                                resultContainer.addSpellAtIndex(d1.getSpell(), d1.getLevel()+1, 0, true, resultStack);
+                                // 4. 生成卷轴并放到鼠标上
                                 synth.setItem(2, resultStack);
                                 // 🔥🔥🔥 关键：发送同步包给玩家 🔥🔥🔥
                                 ModMessage.sendToPlayer(new PacketSyncSynth(0, ItemStack.EMPTY), player);

@@ -16,7 +16,7 @@ public class SpellMenu extends AbstractContainerMenu {
     public final Inventory playerInv;
 
     // 🔥 新增：定义一个3格的内部容器 (0,1=输入, 2=输出)
-    public final SimpleContainer synthContainer = new SimpleContainer(3) {
+    public final SimpleContainer synthContainer = new SimpleContainer(3) {//这个是服务端的
         @Override
         public void setChanged() {
             super.setChanged();

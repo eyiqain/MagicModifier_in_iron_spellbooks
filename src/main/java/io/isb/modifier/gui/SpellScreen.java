@@ -7,6 +7,7 @@ import io.isb.modifier.gui.page.InstructionPage;
 import io.isb.modifier.gui.page.ModifyPage;
 import io.isb.modifier.gui.page.SpellPage;
 import io.isb.modifier.net.ModMessage;
+import io.isb.modifier.net.ui.PacketManageSynth;
 import io.isb.modifier.net.ui.PacketReturnCarried;
 import io.redspace.ironsspellbooks.api.spells.AbstractSpell;
 import io.redspace.ironsspellbooks.api.spells.ISpellContainer;
@@ -66,13 +67,34 @@ public class SpellScreen extends AbstractContainerScreen<SpellMenu> {
 
     private UiWindow focusedWindow = null;
     private boolean isDraggingGesture = false;
-
+    public static class DragContext {
+        public boolean active;
+        public UiWindow sourceWindow;
+        public String sourceType; // "BOOK" / "SYNTH" / "Player"
+        public int sourceIndex;
+    }
+    private final DragContext dragContext = new DragContext();
+    public DragContext dragCtx() { return dragContext; }
     public SpellScreen(SpellMenu menu, Inventory inventory, Component title) {
         super(menu, inventory, title);
         this.imageWidth = 277;
         this.imageHeight = 177;
         this.inventoryLabelY = -1000;
         this.titleLabelY = -1000;
+    }
+    public void beginDrag(UiWindow sourceWindow, String sourceType, int sourceIndex) {
+        dragContext.active = true;
+        dragContext.sourceWindow = sourceWindow;
+        dragContext.sourceType = sourceType;
+        dragContext.sourceIndex = sourceIndex;
+
+    }
+
+    public void clearDragCtx() {
+        dragContext.active = false;
+        dragContext.sourceWindow = null;
+        dragContext.sourceType = null;
+        dragContext.sourceIndex = -1;
     }
 
     @Override
@@ -99,13 +121,13 @@ public class SpellScreen extends AbstractContainerScreen<SpellMenu> {
 
         if (activeLeftWindow != null) activeLeftWindow.onShow();
         if (activeRightWindow != null) activeRightWindow.onShow();
+        //清理拖拽上下文
+        clearDragCtx();
     }
     public UiWindow getActiveRightWindow(){
         return activeRightWindow;
     }
-    public UiWindow getActiveLeftWindow(){
-        return activeRightWindow;
-    }
+    public UiWindow getActiveLeftWindow(){return activeLeftWindow;}
 
     private void registerWindow(WindowSide side, UiWindow window) {
         int id = nextWindowId++;
@@ -287,17 +309,12 @@ public class SpellScreen extends AbstractContainerScreen<SpellMenu> {
         // 3. 【核心兜底逻辑】：全局归还机制
         // 如果鼠标上有东西，而且刚才没有任何子窗口返回 true (consumed == false)
         if (!getMouseStack().isEmpty() && !consumed) {
-            // 视觉上立即拿走，防止重复触发
-            //takeMouseStack();//这是客户端逻辑
-            // 调用我们修改后的 returnStackToPlayer (发送归还包)
-            returnStackToPlayer(getMouseStack());
+            fallbackReturnCarried(getMouseStack());
             consumed = true;
         }
-
         // 清理拖拽状态
         focusedWindow = null;
         isDraggingGesture = false;
-
         // 调用 super 确保原版逻辑（如 NEI/JEI 兼容等）正常运行
         return consumed || super.mouseReleased(mouseX, mouseY, button);
     }
@@ -391,18 +408,57 @@ public class SpellScreen extends AbstractContainerScreen<SpellMenu> {
             System.out.println("debug: 物品为空，无需归还");
         }
     }
+    /**
+     * 兜底归还：优先按 dragCtx 归还到来源槽位；不满足条件则回背包
+     * - SYNTH: 复用 PacketManageSynth(0, sourceIndex)
+     * - BOOK : 使用 PacketReturnToSource(TYPE_BOOK, sourceIndex) （你需要新增这个包）
+     * - 其他 : PacketReturnCarried -> 背包
+     */
+    private void fallbackReturnCarried(ItemStack carried) {
+        if (carried == null || carried.isEmpty()) return;
+
+        boolean handled = false;
+
+        if (dragContext.active && dragContext.sourceType != null) {
+            // 1) 合成槽：直接“放回原槽”
+            if ("SYNTH".equals(dragContext.sourceType)) {
+                int idx = dragContext.sourceIndex;
+                // 只允许回输入槽（0/1），避免把卷轴塞回输出槽 2
+                if (idx >= 0 && idx < 2) {
+                    ModMessage.sendToServer(new io.isb.modifier.net.ui.PacketManageSynth(0, idx));
+                    // 客户端视觉预测：清空鼠标，等待 PacketSyncSynth 同步槽位
+                    this.menu.setCarried(ItemStack.EMPTY);
+                    handled = true;
+                }
+            }
+            // 2) 书本：需要一个“回原书槽”的包（不要用 Inscribe）
+            else if ("BOOK".equals(dragContext.sourceType)) {
+                int idx = dragContext.sourceIndex;
+                ModMessage.sendToServer(new io.isb.modifier.net.ui.PacketReturnToSource(
+                        io.isb.modifier.net.ui.PacketReturnToSource.TYPE_BOOK, idx
+                ));
+                // 客户端视觉预测：清空鼠标
+                this.menu.setCarried(ItemStack.EMPTY);
+                handled = true;
+            }
+        }
+
+        // 3) 没处理掉就回背包（你原有逻辑）
+        if (!handled) {
+            returnStackToPlayer(carried);
+        }
+
+        // 4) 清理上下文，避免串场
+        clearDragCtx();
+    }
 
     // 复写 onClose，确保关闭 UI 时归还物品
     @Override
     public void onClose() {
-        // 处理当前鼠标上粘着的物品
-        if (!mouseStack.isEmpty()) {
-            returnStackToPlayer(mouseStack);
-            mouseStack = ItemStack.EMPTY;
+        ItemStack carried = getMouseStack();
+        if (!carried.isEmpty()) {
+            fallbackReturnCarried(carried); // 关闭也优先回原槽
         }
-        // 归还子窗口暂存的物品（如果有的话，逻辑同上）
-        // for (UiWindow w : rightWindows) ...
-        // 记得调用 super
         super.onClose();
     }
 

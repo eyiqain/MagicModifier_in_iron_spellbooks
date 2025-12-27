@@ -3,10 +3,7 @@ package io.isb.modifier.gui.page;
 import com.mojang.blaze3d.systems.RenderSystem;
 import io.isb.modifier.gui.SpellScreen;
 import io.isb.modifier.net.ModMessage;
-import io.isb.modifier.net.ui.PacketExtractSpell;
-import io.isb.modifier.net.ui.PacketExtractToInv;
-import io.isb.modifier.net.ui.PacketInscribeSpell;
-import io.isb.modifier.net.ui.PacketManageSynth;
+import io.isb.modifier.net.ui.*;
 import io.redspace.ironsspellbooks.api.spells.AbstractSpell;
 import io.redspace.ironsspellbooks.api.spells.ISpellContainer;
 import io.redspace.ironsspellbooks.api.spells.SpellData;
@@ -273,17 +270,19 @@ public class FunctionPage extends SpellScreen.UiWindow {
     private void doPickupSlot(SelectedSlot slot) {
         if (slot.type == SlotType.SYNTH) {
             handleSynthSlotExtract(slot.index);
+            host.beginDrag(this, "SYNTH", slot.index);
         } else if (slot.type == SlotType.BOOK) {
             handleBookExtract(slot.index);
+            host.beginDrag(this, "BOOK", slot.index);
         }
     }
 
     // 合成槽放入
     private boolean handleSynthSlotInsert(int slotIdx, ItemStack held) {
         if (synthStacks[slotIdx].isEmpty() && held.getItem() instanceof Scroll) {
-            ItemStack toPlace = held.split(1);
-            synthStacks[slotIdx] = toPlace;
-            if (held.isEmpty()) host.setMouseStack(ItemStack.EMPTY);
+
+            ItemStack toPlace = held.split(1);//鼠标槽客户端清空
+            synthStacks[slotIdx] = toPlace;//合成槽客户端数据
             ModMessage.sendToServer(new PacketManageSynth(0, slotIdx));
             return true;
         }
@@ -309,7 +308,36 @@ public class FunctionPage extends SpellScreen.UiWindow {
             if (slotIdx == 2) isCraftResultPending = false;
         }
     }
+    private int getSourceBookSlotIfFromThisPage() {
+        SpellScreen.DragContext ctx = host.dragCtx();
+        if (ctx == null || !ctx.active) return -1;
+        if (!"BOOK".equals(ctx.sourceType)) return -1;
+        if (ctx.sourceWindow != this) return -1;
+        return ctx.sourceIndex;
+    }
 
+    /**
+     * 目标槽已有法术时：如果来源是本页 BOOK 槽，则执行交换并返回 true
+     * 注意：交换需要服务端支持。这里先写“发包版本”。
+     */
+    private boolean trySwapBookSlotsIfTargetOccupied(int targetSlotIndex, ItemStack held) {
+        int fromSlot = getSourceBookSlotIfFromThisPage();
+        if (fromSlot < 0) return false;
+        if (fromSlot == targetSlotIndex) return true;
+
+        if (held == null || held.isEmpty() || !(held.getItem() instanceof Scroll)) return false;
+
+        // ✅ 你需要新增这个包：服务端把书里 fromSlot 与 targetSlotIndex 互换
+        ModMessage.sendToServer(new PacketSwapBookSlots(fromSlot, targetSlotIndex));
+
+        // ✅ 客户端视觉：认为已经放回书里了（不想预测也行，但你目前 handleBookInsert 会 shrink）
+        held.shrink(1);
+        if (held.isEmpty()) host.setMouseStack(ItemStack.EMPTY);
+
+        // ✅ 清理拖拽上下文（避免后续误判）
+        host.clearDragCtx();
+        return true;
+    }
     // 法术书放入 (修改版：接收 index)
     private boolean handleBookInsert(int targetSlotIndex, ItemStack held) {
         if (!(held.getItem() instanceof Scroll)) return false;
@@ -325,20 +353,24 @@ public class FunctionPage extends SpellScreen.UiWindow {
         //不允许学习同一个法术
         // 遍历书本所有槽位，检查是否已经拥有该法术（跳过当前目标槽位，因为我们要覆盖它）
         int maxSpells = bookContainer.getMaxSpellCount();
+        int sourceBookSlot = getSourceBookSlotIfFromThisPage();
+
         for (int i = 0; i < maxSpells; i++) {
-            if (i == targetSlotIndex) continue; // 不查我们要放入的这个坑
+            if (i == targetSlotIndex) continue;
+            if (i == sourceBookSlot) continue; // ✅ swap 场景跳过来源槽
+
             SpellData existing = bookContainer.getSpellAtIndex(i);
-            // 如果法术ID相同 (不管等级如何，通常法术书不允许重复学同一个法术)
             if (existing.getSpell().getSpellId().equals(incomingSpellData.getSpell().getSpellId())) {
                 System.out.println("法术书内已存在该法术，禁止重复放入");
                 return false;
             }
         }
-        //也不允许将法术放入已有法术槽内（法术交换和退回后面再写）
+        //也不允许将法术放入已有法术槽内
         ISpellContainer itemContainer = ISpellContainer.get(bookStack);
         SpellData existingSpell = itemContainer.getSpellAtIndex(targetSlotIndex);
         if (existingSpell != SpellData.EMPTY) {
-            return false;
+            // ✅ 如果来源也是本页书槽，则交换
+            return trySwapBookSlotsIfTargetOccupied(targetSlotIndex, held);
         }
         // 视觉消耗
         held.shrink(1);
@@ -503,7 +535,7 @@ public class FunctionPage extends SpellScreen.UiWindow {
     }
 
     private void drawSynthSlotContent(GuiGraphics g, int idx, int x, int y) {
-        ItemStack stack = synthStacks[idx];
+        ItemStack stack = synthStacks[idx];//显示客户端鼠标槽
         if (!stack.isEmpty() && stack.getItem() instanceof Scroll) {
             ISpellContainer sc = ISpellContainer.get(stack);
             SpellData sd = sc.getSpellAtIndex(0);
@@ -521,12 +553,9 @@ public class FunctionPage extends SpellScreen.UiWindow {
         }
     }
 
-    private void tryCraft() {
+    private void tryCraft() {//发包请求服务齐全合成，服务器合成成功会自动同步客户端数据
         if (!synthStacks[0].isEmpty() && !synthStacks[1].isEmpty() && synthStacks[2].isEmpty()) {
             ModMessage.sendToServer(new PacketManageSynth(2, -1));
-            synthStacks[0] = ItemStack.EMPTY;
-            synthStacks[1] = ItemStack.EMPTY;
-            isCraftResultPending = true;
         }
     }
 

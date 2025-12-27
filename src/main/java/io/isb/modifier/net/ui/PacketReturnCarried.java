@@ -40,7 +40,7 @@ public class PacketReturnCarried {
                         player.drop(carried, false);
                     }
 
-                    // 4. 清空鼠标槽
+                    // 4. 清空鼠标槽(服务端的)
                     player.containerMenu.setCarried(ItemStack.EMPTY);
 
                     // 5. 同步
